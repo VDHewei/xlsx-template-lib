@@ -46,7 +46,11 @@ class ArgumentData {
         };
     }
 
-    Add(startToken: string, value: string) {
+    Add(startToken: string, value: string|undefined) {
+        if (value === undefined){
+            this.tokenIterIndex++;
+            return;
+        }
         switch (startToken) {
             case `(`:
                 if (tokenNextIter[this.tokenIterIndex] === "root") {
@@ -62,18 +66,19 @@ class ArgumentData {
             case `]`:
                 if (tokenNextIter[this.tokenIterIndex] === "groups") {
                     this.groups.push(value);
-                    this.tokenIterIndex++;
                 }
                 break;
             case `,`:
-                if (tokenNextIter[this.tokenIterIndex] === "groups") {
+                const token = tokenNextIter[this.tokenIterIndex];
+                if (token === "root") {
+                    this.root = value;
+                    this.tokenIterIndex++;
+                }else if (token === "groups") {
                     this.groups.push(value);
-                }
-                if (tokenNextIter[this.tokenIterIndex] === "suffix") {
+                }else if (token=== "suffix") {
                     this.suffix = value;
                     this.tokenIterIndex++;
-                }
-                if (tokenNextIter[this.tokenIterIndex] === "default") {
+                }else if (token === "default") {
                     this.default = value;
                     this.tokenIterIndex++;
                 }
@@ -183,22 +188,26 @@ const resolveArgument = function (p: Placeholder, data: object | Record<string, 
     if (fn !== "") {
         let key: string = "";
         let startT: string = "";
-        const endToken = [`)`, `]`];
+        const endToken = [`)`,`,`, `]`];
         const startToken = [`(`, `,`, `[`];
         const tokenRow = value.split(`${fn}`)[1]
         const len = tokenRow.length;
-        for (let i = 0; i < len - 1; i++) {
+        for (let i = 0; i < len ; i++) {
             let start = startToken.includes(tokenRow[i]);
+            let end = endToken.includes(tokenRow[i]);
             if (start) {
-                key = "";
                 startT = tokenRow[i];
             }
-            let end = endToken.includes(tokenRow[i]);
-            if (startT !== "" && tokenRow[i] !== startT) {
+            if (startT !== "" && tokenRow[i] !== startT && !end) {
                 key = `${key}${tokenRow[i]}`;
             }
             if (end) {
-                args.Add(startT, key)
+                if(key===""){
+                    args.Add(startT,undefined);
+                }else {
+                    args.Add(startT, key);
+                    key = "";
+                }
             }
         }
     }
@@ -214,7 +223,7 @@ const commandExtendQuery: QueryFunction = function (values: object | Record<stri
         return defaultValueDotGet(values, p)
     }
     const argument = resolveArgument(p, values);
-    if (argument.func !== "" && !defaultCommands.has(argument.func)) {
+    if (argument.func !== "" && defaultCommands.has(argument.func)) {
         return defaultCommands.get(argument.func)(values, argument)
     }
     return defaultValueDotGet(values, p)
@@ -255,6 +264,7 @@ const generateCommandsXlsxTemplate = async function <T extends JsZip.OutputType>
 export {
     commandExtendQuery,
     defaultCommands,
+    resolveArgument,
     CmdFunction,
     AddCommand,
     AddCommandMust,

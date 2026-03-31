@@ -5,6 +5,7 @@ import {Element} from 'elementtree';
 import JsZip from "jszip";
 import * as console from "node:console";
 import {imageSize as sizeOf} from 'image-size';
+import {isMap} from "node:util/types";
 
 // ==================== 常量定义 ====================
 const DOCUMENT_RELATIONSHIP = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
@@ -266,7 +267,7 @@ type FullOptions = WorkbookOptions & ExtensionOptions;
     return obj === undefined ? defaultValue : obj;
 }*/
 
-function _getSimple(obj: any, key: string): any {
+function _getSimple(obj: any|object|Record<string, any>|Record<string, string>, key: string): any {
     if (key.includes("[")) {
         // 修正正则：匹配 [ 和 ] 并进行拆分
         // 例如：'list[0]' -> ['list', '0', '']
@@ -276,6 +277,9 @@ function _getSimple(obj: any, key: string): any {
         if (property && index !== undefined) {
             return obj?.[property]?.[index];
         }
+    }
+    if(isMap(obj)){
+        return obj.get(key)
     }
     return obj?.[key];
 }
