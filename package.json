@@ -1,0 +1,37 @@
+{
+  "name": "xlsx-template-lib",
+  "version": "1.0.0",
+  "description": "xlsx template",
+  "main": "./src/index.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "keywords": [
+    "xlsx",
+    "template",
+    "exceljs",
+    "typescript"
+  ],
+  "author": "VDHewei@github.io",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {
+    "@types/elementtree": "^0.1.5",
+    "elementtree": "^0.1.7",
+    "image-size": "^2.0.2",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}
