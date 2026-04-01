@@ -16,6 +16,14 @@ type CmdFunction = (
     argument: Argument,
 ) => any | undefined;
 
+interface HasToString {
+    toString(): string;
+}
+
+function hasToString(obj: any): obj is HasToString {
+    return obj != null && typeof obj.toString === 'function';
+}
+
 const tokenNextIter = [`root`, `groups`, `suffix`, `default`];
 
 class ArgumentData {
@@ -28,7 +36,7 @@ class ArgumentData {
     tokenIterIndex: number = 0;
     private readonly func: string;
 
-    constructor(private readonly fn: string, p: Placeholder) {
+    constructor(fn: string, p: Placeholder) {
         this.p = p;
         this.func = fn;
         this.groups = [];
@@ -93,8 +101,8 @@ class ArgumentData {
         if (alias === undefined || this.root === undefined || this.root === "") {
             return;
         }
-        const value = valueDotGet(alias, this.root, "");
-        if (value === undefined || typeof value !== "string") {
+        const value = valueDotGet(alias, this.root);
+        if (value === undefined || typeof value !== "string" || !hasToString(value)) {
             return;
         }
         this.alias = this.root;
@@ -102,7 +110,42 @@ class ArgumentData {
     }
 }
 
-const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argument): any[] => {
+class ArgumentValue {
+   private readonly value: any;
+   private readonly defaultValue: any;
+
+    constructor(value: any,defValue: any) {
+        this.value = value;
+        this.defaultValue = defValue;
+    }
+
+    isUndefined(): boolean {
+        return  this.value === undefined;
+    }
+
+    getDefault(): any {
+        return this.defaultValue;
+    }
+
+    getNumber() : number {
+        return Number(this.value);
+    }
+
+    toString() : string {
+        if(this.isUndefined()){
+            return "";
+        }
+        if(typeof this.value === "string"){
+            return this.value as string;
+        }
+        if(hasToString(this.value)){
+            return this.value.toString();
+        }
+        return "";
+    }
+}
+
+const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argument): ArgumentValue[] => {
     let all: string[] = [];
     for (let v of args.groups) {
         let key = `${args.root}.${v}`;
@@ -114,13 +157,10 @@ const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argumen
     if (all.length <= 0) {
         return args.default || '';
     }
-    const items: any[] = [];
+    const items: ArgumentValue[] = [];
     for (let k of all) {
-        let vs = valueDotGet(values, k, args.default);
-        if (vs === undefined) {
-            continue
-        }
-        items.push(vs)
+        let vs = valueDotGet(values, k);
+        items.push(new ArgumentValue(vs,args.default));
     }
     return items;
 }
@@ -128,16 +168,23 @@ const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argumen
 // ${fn:sum_all(#,[C308,C342,C321,C3016,C309_C409],1,0)}
 const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Argument,): any | undefined => {
     let sum: number = NaN;
+    let emptyTimes = 0;
+    let argc = argument.groups.length;
     let items = ArgumentValueLoader(values, argument);
-    for (let num of items) {
-        if (num === undefined) {
-            num = argument.default;
+    for (let value of items) {
+        let num = value.getNumber();
+        if (value.isUndefined()) {
+            emptyTimes++;
+            num = Number(argument.default);
         }
         if (isNaN(sum)) {
-            sum = Number(num)
+            sum = num;
         } else {
             sum = sum + Number(num);
         }
+    }
+    if(emptyTimes === argc){
+        return undefined;
     }
     if (isNaN(sum)) {
         throw new Error(`parse ${argument.p.name} NaN error`);
@@ -148,12 +195,16 @@ const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Ar
 // ${fn:sub_all(#,[C308,C342,C321,C3016,C309_C409],1,0)}
 const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: Argument,): any | undefined => {
     let sub: number = NaN;
+    let emptyTimes = 0;
+    let argc = argument.groups.length;
     let items = ArgumentValueLoader(values, argument);
-    for (let num of items) {
-        if (num === undefined) {
-            num = argument.default;
+    for (let value of items){
+        let num = value.getNumber();
+        if (value.isUndefined()) {
+            emptyTimes++;
+            num = Number(argument.default);
         }
-        if (isNaN(Number(num))) {
+        if (isNaN(num)) {
             continue;
         }
         if (isNaN(sub)) {
@@ -161,6 +212,9 @@ const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: 
         } else {
             sub = sub - Number(num);
         }
+    }
+    if(emptyTimes === argc){
+        return undefined;
     }
     if (isNaN(sub)) {
         throw new Error(`parse ${argument.p.name} NaN error`);
@@ -261,11 +315,18 @@ const generateCommandsXlsxTemplate = async function <T extends JsZip.OutputType>
     return w.generate(options);
 }
 
+const getCommands = () : Map<string,CmdFunction> => {
+    return defaultCommands;
+}
+
 export {
     commandExtendQuery,
-    defaultCommands,
+    getCommands,
     resolveArgument,
+    ArgumentValue,
     CmdFunction,
+    Argument,
+    ArgumentData,
     AddCommand,
     AddCommandMust,
     ArgumentValueLoader,

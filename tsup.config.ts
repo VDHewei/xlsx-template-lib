@@ -21,5 +21,5 @@ export default defineConfig({
     // 清理旧的 dist 文件
     clean: true,
     // 外部依赖不打入包内（非常重要！）
-    external: ['@types/elementtree','image-size','jszip'],
+    external: ['@types/elementtree','image-size','jszip','exceljs'],
 })

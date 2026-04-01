@@ -1,5 +1,5 @@
 {
-  "name": "xlsx-template-lib",
+  "name": "@VDHewei/xlsx-template-lib",
   "version": "1.0.0",
   "description": "xlsx template",
   "main": "./src/index.ts",
@@ -25,6 +25,7 @@
   "dependencies": {
     "@types/elementtree": "^0.1.5",
     "elementtree": "^0.1.7",
+    "exceljs": "^4.4.0",
     "image-size": "^2.0.2",
     "jszip": "^3.10.1"
   },
