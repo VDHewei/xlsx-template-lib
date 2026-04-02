@@ -165,7 +165,7 @@ const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argumen
     return items;
 }
 
-// ${fn:sum_all(#,[C308,C342,C321,C3016,C309_C409],1,0)}
+// ${fn:sum(#,[C308,C342,C321,C3016,C309_C409],1,0)}
 const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Argument,): any | undefined => {
     let sum: number = NaN;
     let emptyTimes = 0;
@@ -192,7 +192,7 @@ const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Ar
     return sum;
 }
 
-// ${fn:sub_all(#,[C308,C342,C321,C3016,C309_C409],1,0)}
+// ${fn:sub(#,[C308,C342,C321,C3016,C309_C409],1,0)}
 const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: Argument,): any | undefined => {
     let sub: number = NaN;
     let emptyTimes = 0;
@@ -223,7 +223,7 @@ const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: 
 }
 
 const defaultCommands = new Map<string, CmdFunction>([
-    ["sum_all", sum_all],
+    ["sum", sum_all],
     ["sub", sub_value],
 ]);
 

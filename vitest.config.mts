@@ -1,14 +1,26 @@
 import {defineConfig} from 'vitest/config'
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export default defineConfig({
     test: {
+        //setupFiles: ['./vitest.setup.ts'],
+        unstubEnvs: true,
         include: ['src/**/*.test.ts', 'src/*.test.ts', 'test/**/*.test.ts'],
         tags: [
             {
                 name: "backend",
                 description: "Tests written for backend.",
                 timeout: 100000,
+                retry: 3,
             },
+            {
+                name: "xlsx",
+                description: "xlsx test group",
+                timeout: 500000,
+                retry: 3,
+            }
         ],
     },
     resolve: {
@@ -16,5 +28,6 @@ export default defineConfig({
     },
     define: {
         'import.meta.vitest': 'undefined',
+        'import.meta.env':'process.env',
     },
 })
