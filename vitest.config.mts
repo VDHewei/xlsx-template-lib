@@ -20,6 +20,11 @@ export default defineConfig({
                 description: "xlsx test group",
                 timeout: 500000,
                 retry: 3,
+            },
+            {
+                name: "compile",
+                description: "compile xlsx test group",
+                timeout: 500000,
             }
         ],
     },
@@ -28,6 +33,6 @@ export default defineConfig({
     },
     define: {
         'import.meta.vitest': 'undefined',
-        'import.meta.env':'process.env',
+        'import.meta.env': 'process.env',
     },
 })

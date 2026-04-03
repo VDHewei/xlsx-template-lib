@@ -15,6 +15,7 @@ import {
 } from './helper';
 
 
+
 async function createMockBuffer(options: {
     targetValue?: string | null;
     merged?: boolean;
@@ -230,7 +231,7 @@ describe('scanCellSetPlaceholder',{tags:["backend","xlsx"]}, () => {
 
 });
 
-describe('compileWorkSheet',{tags:["xlsx"]}, ()=> {
+describe('compileWorkSheet',{tags:["compile"]}, ()=> {
     it('parse-rules-only', async () => {
         const sheetName = `export_metadata.config`;
         const workbook = await loadWorkbook("./test_data/test_data.xlsx");
@@ -240,6 +241,15 @@ describe('compileWorkSheet',{tags:["xlsx"]}, ()=> {
         expect(res.rules.has(RuleToken.AliasToken)).equal(true,"解析alias规则失败")
         expect(res.rules.has(RuleToken.CellToken)).equal(true,"解析cell规则失败")
         expect(res.rules.has(RuleToken.RowCellToken)).equal(true,"解析rowCell规则失败")
+        expect(res.rules.get(RuleToken.RowCellToken).length).not.equal(0,"解析rowCell规则失败")
         expect(res.rules.has(RuleToken.MergeCellToken)).equal(true,"解析mergeCell规则失败")
+    });
+
+    it('compile-only', async () => {
+        const sheetName = `export_metadata.config`;
+        const workbook ="./test_data/test_data.xlsx";
+        const res = await compileWorkSheet(workbook,sheetName);
+        expectTypeOf<exceljs.Xlsx|Error[]>(res);
+        assertType<exceljs.Xlsx>(res as exceljs.Xlsx);
     });
 });
