@@ -1435,12 +1435,21 @@ const compileCheck = function (iv: RuleResult, ctx: RuleOptions): Error[] | unde
 const generateWorkSheetCellsPlaceholder = function (ctx: CompileContext, expr: RuleValue, sheet: exceljs.Worksheet): Error[] | undefined {
     const errs: Error[] = [];
     // 获取解析出的 cells 列表
-    const cells = expr.cells;
-
-    if (!cells || cells.length === 0) {
+    let cellsItems = expr.cells;
+    const posExpr: RuleValue = expr.posExpr;
+    if(cellsItems === undefined &&
+        posExpr!==undefined &&
+        posExpr.value!==undefined){
+        const r = posExpr.value as RangeCell;
+        if(r!==undefined){
+            cellsItems = r.getCells();
+        }
+    }
+    if (!cellsItems || cellsItems.length === 0) {
         return undefined;
     }
     ctx.sheet = sheet;
+    const cells = cellsItems;
     // 遍历目标单元格
     cells.forEach((cellPoint, index) => {
         const {X, Y} = cellPoint;
