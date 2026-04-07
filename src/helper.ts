@@ -2,8 +2,8 @@ import exceljs from "exceljs";
 import {Stream} from "stream";
 
 type CellPosition = {
-    X: string;
-    Y: number;
+    Row: string;
+    Column: number;
     Sheet?: string | number;
 };
 
@@ -15,8 +15,8 @@ type MergeCellRange = {
 }
 
 type CellPoint = {
-    X: number,
-    Y: number,
+    Row: number,
+    Column: number,
 }
 
 interface PlaceholderCellValue {
@@ -30,8 +30,27 @@ type ScanTokenData = {
     token: string;
 }
 
+type MacroArgs = {
+    type: string
+    columnParam: number
+    rowParam: number[] | number
+    formatter?: string
+}
+
+type ExtractMacroArgs = {
+    argToken: string
+    startToken: string
+    endToken: string
+}
+
 const isPureNumber = /^[0-9]+$/;
 const isPureUppercase = /^[A-Z]+$/;
+const exprSingle = `expr`;
+const exprArr = `exprArr`;
+const exprIndex = `index`;
+const defaultKey = `!!`;
+const numberKey = `!!number`;
+const codeKey = `!!codeKey`;
 
 enum RuleToken {
     AliasToken = 'alias',
@@ -115,12 +134,12 @@ interface RuleOptions {
 }
 
 interface RangeCell {
-    minX: number;
-    maxX: number;
-    stepX: number;
-    minY: number;
-    maxY: number;
-    stepY: number;
+    minRow: number;
+    maxRow: number;
+    stepRow: number;
+    minColumn: number;
+    maxColumn: number;
+    stepColumn: number;
 
     getCells(): CellPoint[];
 }
@@ -146,6 +165,27 @@ class RuleMapOptions implements RuleOptions {
         } else {
             this.ruleKeyMap = m;
         }
+    }
+
+    static withAllSheets(w: exceljs.Workbook, excludes?: string[]): RuleOptions {
+        const compileSheets = [];
+        const options = new RuleMapOptions();
+        if (excludes === undefined) {
+            excludes = [];
+        }
+        if (w.worksheets.length > 0 && excludes.length > 0) {
+            for (const [index, sheet] of w.worksheets.entries()) {
+                if (excludes.includes(index.toString()) || excludes.includes(sheet.name)) {
+                    continue;
+                }
+                if (sheet.name.endsWith(".json")) {
+                    continue;
+                }
+                compileSheets.push(sheet.name);
+            }
+        }
+        options.compileSheets = compileSheets;
+        return options;
     }
 
     parseDefault(worksheet: exceljs.Worksheet): RuleOptions {
@@ -283,6 +323,13 @@ class CompileContext extends RuleMapOptions {
         return this.aliasMap.has(key);
     }
 
+    public filterSheet(sheetName: string): boolean {
+        if (sheetName !== "" && this.compileSheets !== undefined && this.compileSheets.length > 0) {
+            return this.compileSheets.includes(sheetName)
+        }
+        return false;
+    }
+
 }
 
 type TokenParserReply = {
@@ -297,10 +344,10 @@ type TokenParser = (ctx: Map<RuleToken, RuleValue[]>, t: RuleToken, value: strin
 type TokenParseResolver = { exists: boolean, handler?: TokenParser }
 
 type RangeValueParserOptions = {
-    xRange: number;
-    yRange: number;
-    x: string;
-    y: string;
+    rowRange: number;
+    columnRange: number;
+    row: string;
+    column: string;
     express: string;
     token: RuleToken;
 };
@@ -348,11 +395,11 @@ class DefaultPlaceholderCellValue implements PlaceholderCellValue {
 
 const _getCells = (thisArg: RangeCell): CellPoint[] => {
     let cells: CellPoint[] = [];
-    for (let j = thisArg.minY; j < thisArg.maxY; j += thisArg.stepY) {
-        for (let i = thisArg.minX; i < thisArg.maxX; i += thisArg.stepX) {
+    for (let j = thisArg.minColumn; j <= thisArg.maxColumn; j += thisArg.stepColumn) {
+        for (let i = thisArg.minRow; i <= thisArg.maxRow; i += thisArg.stepRow) {
             cells.push({
-                X: i,
-                Y: j,
+                Row: i,
+                Column: j,
             });
         }
     }
@@ -588,17 +635,17 @@ class TokenParserManger {
         const offset = posToken.length;
         const index = value.indexOf(posToken);
         const len = value.length;
-        const x = value.substring(0, index).trim();
-        const y = value.substring(index + offset, len).trim();
+        const column = value.substring(0, index).trim(); // column
+        const row = value.substring(index + offset, len).trim(); // row
         const rangeToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.RangeToken);
-        const xRange = x.indexOf(rangeToken);
-        const yRange = y.indexOf(rangeToken);
-        if (xRange > 0 || yRange > 0) {
-            return TokenParserManger.parseRangeValue(ctx, {xRange, yRange, x, y, express: value, token})
+        const columnRange = column.indexOf(rangeToken);
+        const rowRange = row.indexOf(rangeToken);
+        if (rowRange > 0 || columnRange > 0) {
+            return TokenParserManger.parseRangeValue(ctx, {rowRange, columnRange, row, column, token, express: value})
         }
         const cell: CellPoint = {
-            X: columnLetterToNumber(x),
-            Y: Number.parseInt(y, 10),
+            Row: Number.parseInt(row, 10),
+            Column: columnLetterToNumber(column),
         };
         const expr: RuleValue = {
             value: cell,
@@ -608,7 +655,7 @@ class TokenParserManger {
         }
         return {
             ok: true,
-            values: [x, y],
+            values: [row, column],
             expr,
         }
     }
@@ -629,6 +676,7 @@ class TokenParserManger {
             return {ok: false};
         }
         const equalToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.EqualToken);
+        const useAliasToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.UseAliasToken);
         const index = value.indexOf(equalToken);
         const offset = equalToken.length;
         if (index <= 0) return {ok: false, error: new Error(`merge cell config syntax error: ${value}`)};
@@ -640,7 +688,7 @@ class TokenParserManger {
         const posReply = posParser.handler(ctx, RuleToken.PosToken, rangeStr);
         const functionToken = getTokenParser(RuleToken.FunctionPatternToken);
         if (!posReply.ok) return {ok: false, ...posReply};
-        const macroGenToken = TokenParserManger.getTokenByCtx(ctx,RuleToken.CompileGenToken);
+        const macroGenToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.CompileGenToken);
         // Parse Expression (could be function, var, or raw string)
         // We treat the right side as a raw string or simple token for the generator to handle
         const expr: RuleValue = {
@@ -649,15 +697,19 @@ class TokenParserManger {
             posExpr: posReply.expr,
             tokens: [token, ...posReply.expr.tokens],
         };
-        if(exprStr.startsWith(macroGenToken)){
-            const argsSplitToken = TokenParserManger.getTokenByCtx(ctx,RuleToken.ArgPosToken);
+        if (exprStr.startsWith(macroGenToken)) {
+            const argsSplitToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.ArgPosToken);
             const args = TokenParserManger.split(exprStr, argsSplitToken, [`(`, `)`]);
             const macro = TokenParserManger.filterMacro(args);
-            if(macro!==undefined && macro.tokens.length >0){
+            const aliasTokens = TokenParserManger.extractUseAliasTokens(ctx, args);
+            if (aliasTokens !== undefined && aliasTokens.length > 0) {
+                expr.tokens.push(...aliasTokens);
+            }
+            if (macro !== undefined && macro.tokens.length > 0) {
                 expr.macro = macro;
                 expr.tokens.push(...macro.tokens);
             }
-        }else {
+        } else {
             const exprReply = functionToken.handler(ctx, RuleToken.FunctionPatternToken, exprStr);
             if (exprReply.error !== undefined && exprReply.error instanceof Error) {
                 return {
@@ -698,6 +750,7 @@ class TokenParserManger {
         if (token !== RuleToken.FunctionPatternToken) {
             return {ok: false};
         }
+        const useAliasToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.UseAliasToken);
         const wordToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.AnyToken);
         const funcToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.FunctionPatternToken);
         const splitIndex = funcToken.indexOf(wordToken);
@@ -726,6 +779,10 @@ class TokenParserManger {
                     value: args, // arguments array
                     tokens: tokens,
                 };
+                const alias = TokenParserManger.extractUseAliasTokens(ctx, args);
+                if (alias !== undefined && alias.length > 0) {
+                    expr.tokens.push(...alias);
+                }
                 if (macro !== undefined && macro.tokens.length > 0) {
                     expr.macro = macro;
                     expr.tokens.push(...macro.tokens)
@@ -838,97 +895,34 @@ class TokenParserManger {
         return values[0].key
     }
 
-    private static parseRangeValue(ctx: Map<RuleToken, RuleValue[]>, options: RangeValueParserOptions): TokenParserReply {
-        let xReply: TokenParserReply;
-        let yReply: TokenParserReply;
-        const rangeCell: RangeCell = {
-            stepX: 1,
-            stepY: 1,
-            minY: 0,
-            minX: 0,
-            maxX: 0,
-            maxY: 0,
-            getCells: function (): CellPoint[] {
-                return _getCells(this);
-            }
-        };
-        const {xRange, x, y, yRange, express, token} = options;
-        const rangeParse = getTokenParser(RuleToken.RangeToken);
-        if (xRange > 0) {
-            xReply = rangeParse.handler(ctx, RuleToken.RangeToken, x);
-        } else {
-            rangeCell.maxX = rangeCell.minX = columnLetterToNumber(x);
-        }
-        if (yRange > 0) {
-            yReply = rangeParse.handler(ctx, RuleToken.RangeToken, y)
-        } else {
-            rangeCell.maxY = rangeCell.minY = Number.parseInt(y, 10);
-        }
-        if (xReply !== undefined) {
-            if (!xReply.ok || xReply.values === undefined) {
-                return xReply
-            }
-            const values = xReply.values as number[];
-            let min = values[0];
-            let max = values[1];
-            let setup = values[2] ?? 1;
-            rangeCell.minX = min;
-            rangeCell.maxX = max;
-            rangeCell.stepX = setup;
-        }
-        if (yReply !== undefined) {
-            if (!yReply.ok || yReply.values === undefined) {
-                return yReply
-            }
-            const values = yReply.values as number[];
-            let min = values[0];
-            let max = values[1];
-            let setup = values[2] ?? 1;
-            rangeCell.minY = min;
-            rangeCell.maxY = max;
-            rangeCell.stepY = setup;
-        }
-        const expr: RuleValue = {
-            express: express,
-            tokens: [token], //  express tokens
-            value: rangeCell, // alias value
-        }
-        return {
-            ok: true,
-            expr,
-            values: rangeCell,
-        };
-    }
-
-    private static parsePosNumber(value: string): number {
-        let num: number = NaN;
-        if (isPureNumber.test(value)) {
-            num = Number.parseInt(value, 10)
-        } else if (isPureUppercase.test(value)) {
-            num = columnLetterToNumber(value);
-        }
-        return !isNaN(num) && num <= 0 ? NaN : num;
-    }
-
-    private static scanToken(value: string, startToken: string, endTokens: string[]): ScanTokenData[] {
+    static scanToken(value: string, startToken: string, endTokens: string[]): ScanTokenData[] {
         let token: string = "";
         let data: string = "";
         let end: boolean = false;
         let start: boolean = false;
         const items: ScanTokenData[] = [];
-        const offset = startToken.length;
+        const offset = [startToken, ...endTokens].sort((a, b) => a.length - b.length)[0].length;
         const size = value.length;
         for (let i = 0; i < size; i += offset) {
+            let leftToken: string;
             if (value[i] === startToken) {
                 start = true;
+                if (token !== "") {
+                    items.push({
+                        token,
+                        value: "",
+                    })
+                }
                 token = startToken;
             } else {
-                start = false;
+                start = token === startToken;
+                leftToken = `${token}${value[i]}`
             }
-            if (endTokens.includes(value[i])) {
-                end = true;
-            } else {
-                end = false;
+            let subfix = endTokens.filter(s => s === leftToken);
+            end = endTokens.includes(value[i]) || subfix.length > 0;
+            if (subfix.length > 0) {
+                token = leftToken;
+                data = "";
             }
             if (start && end) {
                 continue;
@@ -948,14 +942,6 @@ class TokenParserManger {
                 data = "";
                 end = false;
             }
-        }
-        return items;
-    }
-
-    private static toList(ctx: Map<RuleToken, RuleValue[]>, endTokens: RuleToken[]): string[] {
-        const items: string[] = [];
-        for (const token of endTokens) {
-            items.push(TokenParserManger.getTokenByCtx(ctx, token));
         }
         return items;
     }
@@ -1017,8 +1003,8 @@ class TokenParserManger {
 
     static filterMacro(values: string[]): FilterMacroResult | undefined {
         const filter: FilterMacroResult = {
-            tokens:[],
-            express:[],
+            tokens: [],
+            express: [],
         };
         for (const expr of values) {
             let items = TokenParserManger.compileExprExtract(expr);
@@ -1029,6 +1015,97 @@ class TokenParserManger {
             filter.tokens.push(...items);
         }
         return filter.tokens.push() <= 0 ? undefined : filter;
+    }
+
+    static extractUseAliasTokens(ctx: Map<RuleToken, RuleValue[]>, args: string[]): RuleToken[] {
+        const tokens: RuleToken[] = [];
+        const useAliasToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.UseAliasToken);
+        args.forEach(v => v.startsWith(useAliasToken) && tokens.push(RuleToken.UseAliasToken))
+        return tokens;
+    }
+
+    static toList(ctx: Map<RuleToken, RuleValue[]>, endTokens: RuleToken[]): string[] {
+        const items: string[] = [];
+        for (const token of endTokens) {
+            items.push(TokenParserManger.getTokenByCtx(ctx, token));
+        }
+        return items;
+    }
+
+    private static parseRangeValue(ctx: Map<RuleToken, RuleValue[]>, options: RangeValueParserOptions): TokenParserReply {
+        let rowReply: TokenParserReply;
+        let columnReply: TokenParserReply;
+        const rangeCell: RangeCell = {
+            stepRow: 1,
+            stepColumn: 1,
+            minColumn: 0,
+            minRow: 0,
+            maxRow: 0,
+            maxColumn: 0,
+            getCells: function (): CellPoint[] {
+                return _getCells(this);
+            }
+        };
+        const {rowRange, row, column, columnRange, express, token} = options;
+        const rangeParse = getTokenParser(RuleToken.RangeToken);
+        if (rowRange > 0) {
+            columnReply = rangeParse.handler(ctx, RuleToken.RangeToken, row);
+        } else {
+            const rowValue = Number.parseInt(row, 10);
+            rangeCell.maxRow = rowValue;
+            rangeCell.minRow = rowValue;
+        }
+        if (columnRange > 0) {
+            rowReply = rangeParse.handler(ctx, RuleToken.RangeToken, column)
+        } else {
+            const columnValue = columnLetterToNumber(column);
+            rangeCell.maxColumn = columnValue;
+            rangeCell.minColumn = columnValue;
+        }
+        if (columnReply !== undefined) {
+            if (!columnReply.ok || columnReply.values === undefined) {
+                return columnReply
+            }
+            const values = columnReply.values as number[];
+            let min = values[0];
+            let max = values[1];
+            let setup = values[2] ?? 1;
+            rangeCell.minRow = min;
+            rangeCell.maxRow = max;
+            rangeCell.stepRow = setup;
+        }
+        if (rowReply !== undefined) {
+            if (!rowReply.ok || rowReply.values === undefined) {
+                return rowReply
+            }
+            const values = rowReply.values as number[];
+            let min = values[0];
+            let max = values[1];
+            let setup = values[2] ?? 1;
+            rangeCell.minColumn = min;
+            rangeCell.maxColumn = max;
+            rangeCell.stepColumn = setup;
+        }
+        const expr: RuleValue = {
+            express: express,
+            tokens: [token], //  express tokens
+            value: rangeCell, // alias value
+        }
+        return {
+            ok: true,
+            expr,
+            values: rangeCell,
+        };
+    }
+
+    private static parsePosNumber(value: string): number {
+        let num: number = NaN;
+        if (isPureNumber.test(value)) {
+            num = Number.parseInt(value, 10)
+        } else if (isPureUppercase.test(value)) {
+            num = columnLetterToNumber(value);
+        }
+        return !isNaN(num) && num <= 0 ? NaN : num;
     }
 
 }
@@ -1125,113 +1202,219 @@ function getMergeRange(ws: exceljs.Worksheet, row: number, col: number): MergeCe
     return null;
 }
 
+const resolveCompileMacroGen = (ctx: CompileContext, expr: string, currentCellIndex: number): string => {
+    let parts: string[] = [];
+    let join = ".";
+    const m = ctx.getContextMap()
+    const aliasToken = TokenParserManger.getTokenByCtx(m, RuleToken.UseAliasToken);
+    const genToken = TokenParserManger.getTokenByCtx(m, RuleToken.CompileGenToken);
+    const endTokens = [RuleToken.CompileGenToken, RuleToken.LparenToken, RuleToken.ArgPosToken, RuleToken.RparenToken];
+    const values = TokenParserManger.scanToken(expr, genToken, TokenParserManger.toList(m, endTokens));
+    for (const [_, item] of values.entries()) {
+        if (item.value === undefined && item.value !== "") {
+            continue
+        }
+        if (!item.token.startsWith(aliasToken) && item.value !== exprIndex) {
+            parts.push(item.value);
+        } else {
+            parts.push(resolveAliasExpr(ctx, item.value, currentCellIndex));
+        }
+    }
+    return parts.join(join);
+}
+
+const getExprEnd = function (macroExpr: string, matchIndex: number, rparenToken: string): number {
+    return macroExpr.indexOf(rparenToken, matchIndex);
+}
+
+const macroFormatters: string[] = [numberKey, codeKey];
+
+// compile:Macro(type, X_arr, Y_arr, formatter)
+const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroArgs {
+    let end = NaN;
+    const offset = options.startToken.length;
+    const startIndex = expr.indexOf(options.startToken);
+    const endIndex = expr.indexOf(options.endToken);
+    const argValues = expr.substring(startIndex + offset, endIndex);
+    const values = argValues.split(options.argToken);
+    const extracResult: MacroArgs = {type: values[0], rowParam: [], columnParam: undefined};
+    if (values.length > 1) {
+        extracResult.columnParam = columnLetterToNumber(values[1])
+    }
+    if (macroFormatters.includes(values[values.length - 1])) {
+        end = values.length - 1;
+        extracResult.formatter = values[end]
+    }
+    if (!isNaN(end) && values.length > 2) {
+        extracResult.rowParam = values.slice(2, end).map(x => Number.parseInt(x, 10));
+    } else if (values.length > 2) {
+        extracResult.rowParam = values.slice(2, values.length).map(x => Number.parseInt(x, 10));
+    }
+    if (extracResult.rowParam !== undefined && extracResult.rowParam instanceof Array && extracResult.rowParam.length === 1) {
+        extracResult.rowParam = extracResult.rowParam[0];
+    }
+    return extracResult;
+}
+
+type MacroUnitHelper = (v: string) => string;
+
+const __codeKey = (str: string): string => {
+    let vs = str.trim().replace("-", "_").replace("/", "_").trim();
+    for (; vs.indexOf("__") >= 0;) {
+        vs = vs.replace("__", "_")
+    }
+    for (; vs.indexOf(" ") >= 0;) {
+        vs = vs.replace(" ", "")
+    }
+    return vs.trim().toUpperCase();
+}
+
+const __numberKey = (str: string): string => {
+    return Number.parseInt(str, 10).toString()
+}
+
+const macroFormatter: Map<string, MacroUnitHelper> = new Map<string, MacroUnitHelper>([
+    [codeKey, __codeKey],
+    [numberKey, __numberKey],
+    [defaultKey, (v: string): string => v],
+]);
+
+
+const execMacroFormat = function (value: string, formatter: string): string {
+    if (!macroFormatter.has(formatter)) {
+        return value;
+    }
+    return macroFormatter.get(formatter)(value)
+}
+
+const toCellRow = (rowVals: number[], setup?: number): number[] => {
+    if (setup === undefined) {
+        setup = 1;
+    }
+    if (rowVals.length == 2) {
+        const values: number[] = [];
+        for (let start = rowVals[0]; start <= rowVals[1]; start += setup) {
+            values.push(start);
+        }
+        return values;
+    }
+    return rowVals;
+}
+
+const toCellColumn = (columnVals: number[], setup?: number): number[] => {
+    return toCellRow(columnVals, setup);
+}
+
 /**
  * 核心宏解析函数
  * 支持：
  * 1. compile:Macro(expr/exprArr, [X], [Y], !formatter)
  * 2. compile:Gen(expr, expr1, ...)
  */
-const resolveCompileMacro = (ctx: CompileContext, macroStr: string, currentCellIndex: number, totalCells: number): string => {
-    // 1. 处理 compile:Gen
-    // 语法: compile:Gen(expr1, expr2, ...)
-    // 逻辑: 递归解析参数并拼接
+const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTokens: RuleToken[], currentCellIndex: number, totalCells: number): string => {
+    if (macroTokens === undefined || macroTokens.length <= 0) {
+        return macroExpr;
+    }
+
+    const sheet = ctx.sheet;
+    if (sheet === undefined) {
+        throw new Error(`miss context worksheet`);
+    }
     const m = ctx.getContextMap();
-    const aliasToken = TokenParserManger.getTokenByCtx(m, RuleToken.AliasToken);
+    const argToken = TokenParserManger.getTokenByCtx(m, RuleToken.ArgPosToken);
+    const rparenToken = TokenParserManger.getTokenByCtx(m, RuleToken.RparenToken);
+    const lparenToken = TokenParserManger.getTokenByCtx(m, RuleToken.LparenToken);
     const genToken = TokenParserManger.getTokenByCtx(m, RuleToken.CompileGenToken);
     const maroToken = TokenParserManger.getTokenByCtx(m, RuleToken.CompileMacroToken);
-    if (macroStr.startsWith(genToken)) {
-        const match = macroStr.match(/compile:Gen\((.+)\)/);
-        if (match) {
-            const argsStr = match[1];
-            // 简单的参数分割 (注意：如果参数内部包含逗号，需更复杂的解析器，此处假设简单结构)
-            // 这里我们需要递归解析每个参数，因为它可能是另一个 macro
-            // 由于正则难以处理嵌套，此处采用简单的平衡组或深度遍历（简化版实现）
-            // 我们假设参数由 compile:Macro 或普通字符串组成
-
-            // 提取参数列表 (简易版)
-            const args = argsStr.split(/,(?![^\[]*\])/); // 忽略 [] 内的逗号进行分割 (粗略)
-
-            const resolvedParts = args.map(arg => {
-                arg = arg.trim();
-                if (arg.startsWith('compile:')) {
-                    return resolveCompileMacro(ctx, arg, currentCellIndex, totalCells);
-                }
-                // 解析参数中的别名引用 @T
-                if (arg.startsWith(aliasToken)) {
-                    return ctx.getAlias(arg.substring(1)) || arg;
-                }
-                return arg;
-            });
-
-            return resolvedParts.join(''); // Gen 通常用于拼接
+    const tokenMap: Map<RuleToken, number[]> = new Map<RuleToken, number[]>();
+    for (const [index, token] of macroTokens.entries()) {
+        let items: number[] = [];
+        if (tokenMap.has(token)) {
+            items = tokenMap.get(token);
         }
+        items.push(index);
+        tokenMap.set(token, items);
     }
-
-    // 2. 处理 compile:Macro
+    const resolveArray = (param: number | number[]): number[] => {
+        if (param instanceof Array) {
+            return param;
+        }
+        return [param];
+    };
+    // 1. 处理 compile:Macro -> gen.expr | gen.exprArr
     // 语法: compile:Macro(type, X_arr, Y_arr, formatter)
-    if (macroStr.startsWith(maroToken)) {
-        const match = macroStr.match(/compile:Macro\(([^,]+),([^,]+),([^,]+),([^)]+)\)/);
-        if (!match) return macroStr;
-
-        let [, type, xParam, yParam, formatter] = match;
-
-        // 辅助函数：解析参数数组，支持别名 @T
-        const resolveArray = (param: string): (string | number)[] => {
-            // 去除 []
-            const clean = param.replace(/[\[\]]/g, '').trim();
-            // 按 , 分割
-            return clean.split(',').map(item => {
-                item = item.trim();
-                if (item.startsWith(aliasToken)) {
-                    // 使用 CompileContext 提供的 getAlias 方法
-                    const val = ctx.getAlias(item.substring(1));
-                    // 如果别名是数字字符串，转换为数字，否则返回字符串
-                    return val && !isNaN(Number(val)) ? Number(val) : (val || item);
-                }
-                return !isNaN(Number(item)) ? Number(item) : item;
-            });
-        };
-
-        const xVals = resolveArray(xParam);
-        const yVals = resolveArray(yParam);
-
-        // 处理 exprArr (笛卡尔积展开)
-        if (type === 'exprArr') {
-            const parts: string[] = [];
-            xVals.forEach(x => {
-                yVals.forEach(y => {
-                    // 构建坐标引用，如 F:13
-                    const cellRef = `${x}:${y}`;
-
-                    // 根据 formatter 生成内容
-                    if (formatter === '!codeKey') {
-                        // 规则：codeKey(X:Y.value) -> 模拟生成代码引用
-                        // 假设 codeKey 是一种特定的代码生成格式
-                        parts.push(`codeKey(${cellRef}.value)`);
-                    } else if (formatter === '!number') {
-                        // 规则：转化为数字索引或值
-                        // 这里假设直接输出坐标对应的数字索引或者格式化后的值
-                        // 示例中未明确 !number 的具体输出格式，暂时保留数字转换逻辑
-                        parts.push(String(currentCellIndex));
-                    } else {
-                        parts.push(cellRef);
-                    }
-                });
-            });
-            return parts.join(',');
-        }
-
-        // 处理 expr (单一值或索引)
-        else if (type === 'expr' || type === 'index') {
-            if (formatter === '!number') {
-                return String(currentCellIndex);
+    if (tokenMap.has(RuleToken.CompileMacroToken)) {
+        let offset: number = 0;
+        let exprValue: string = macroExpr;
+        const times = tokenMap.get(RuleToken.CompileMacroToken).length;
+        for (let i = times; i > 0; i--) {
+            const matchIndex: number = exprValue.indexOf(maroToken, offset);
+            if (matchIndex < 0) {
+                break;
             }
-            // 如果是 expr 类型，通常用于取特定值
-            return `${xVals[0]}:${yVals[0]}`;
+            offset = getExprEnd(exprValue, matchIndex, rparenToken);
+            const macroCurrent = exprValue.substring(matchIndex, offset + rparenToken.length);
+            const opts: ExtractMacroArgs = {startToken: lparenToken, endToken: rparenToken, argToken};
+            // compile:Macro(type, X_arr, Y_arr, formatter)
+            let {type, columnParam, rowParam, formatter} = extractMacro(macroCurrent, opts);
+            let rowVals: number[];
+            let columnVals: number[];
+            const parts: string[] = [];
+            // 辅助函数：解析参数数组
+            if (columnParam !== undefined && rowParam !== undefined) {
+                rowVals = resolveArray(rowParam);
+                columnVals = resolveArray(columnParam);
+                const rowItems = toCellRow(rowVals);
+                const columnItems = toCellColumn(columnVals);
+                rowItems.forEach(r => {
+                    columnItems.forEach(c => {
+                        // 构建坐标引用，如 F:13
+                        //const cellRef = `${columnNumberToLetter(r)}:${c}`;
+                        const cellValue = sheet.findCell(r, c);
+                        if (cellValue === undefined || cellValue.value === null) {
+                            return;
+                        }
+                        const value = cellValue.value;
+                        parts.push(execMacroFormat(value.toString(), formatter));
+                    });
+                });
+            }
+            // 处理 exprArr (笛卡尔积展开)
+            if (type === exprArr) {
+                macroExpr = macroExpr.replace(macroCurrent, parts.join(','))
+            } else if (type === exprSingle) {
+                // 处理 expr (单一值或索引)
+                // 如果是 expr 类型，通常用于取特定值
+                macroExpr = macroExpr.replace(macroCurrent, parts[0])
+            } else if (type === exprIndex) {
+                // 处理 exprIndex == index
+                const indexValue = currentCellIndex + 1;
+                macroExpr = macroExpr.replace(macroCurrent, indexValue.toString())
+            }
         }
     }
 
-    return macroStr;
+    // 2. 处理 compile:Gen -> expr,expr1,expr2...
+    // 逻辑: 递归解析参数并拼接
+    // 语法: compile:Gen(expr1, expr2, ...)
+    if (tokenMap.has(RuleToken.CompileGenToken)) {
+        let exprValue: string = macroExpr;
+        const times = tokenMap.get(RuleToken.CompileGenToken).length;
+        for (let i = times; i > 0; i--) {
+            const matchIndex: number = exprValue.indexOf(genToken);
+            if (matchIndex < 0) {
+                break;
+            }
+            // compile:Gen(expr1, expr2, ...)
+            const offset = getExprEnd(exprValue, matchIndex, rparenToken);
+            const macroCurrent = exprValue.substring(matchIndex, offset + rparenToken.length);
+            // args.join('.')
+            exprValue = resolveCompileMacroGen(ctx, macroCurrent, currentCellIndex);
+        }
+        macroExpr = exprValue;
+    }
+
+    return macroExpr;
 };
 
 const loadWorkbook = async function <T extends ArrayBuffer | Buffer | string>(data: T): Promise<exceljs.Workbook> {
@@ -1267,8 +1450,8 @@ const scanCellSetPlaceholder = async function <T extends ArrayBuffer | Buffer | 
 }
 
 const workSheetSetPlaceholder = function (worksheet: exceljs.Worksheet, cell: CellPosition, placeholder: PlaceholderCellValue): exceljs.Worksheet {
-    const colNum = columnLetterToNumber(cell.X);
-    const rowNum = cell.Y;
+    const colNum = columnLetterToNumber(cell.Row);
+    const rowNum = cell.Column;
     const targetCell = worksheet.getCell(rowNum, colNum);
     if (targetCell.isMerged) {
         const range = getMergeRange(worksheet, rowNum, colNum);
@@ -1298,6 +1481,7 @@ const workSheetSetPlaceholder = function (worksheet: exceljs.Worksheet, cell: Ce
     return worksheet;
 }
 
+const compileCellTokens: RuleToken[] = [RuleToken.CellToken, RuleToken.MergeCellToken, RuleToken.RowCellToken];
 const ruleTokens: RuleToken[] = [RuleToken.AliasToken, RuleToken.CellToken, RuleToken.MergeCellToken, RuleToken.RowCellToken];
 
 const isRuleToken = function (t: RuleToken): boolean {
@@ -1432,16 +1616,174 @@ const compileCheck = function (iv: RuleResult, ctx: RuleOptions): Error[] | unde
     return undefined;
 }
 
+const macroTokens: RuleToken[] = [RuleToken.CompileGenToken, RuleToken.CompileMacroToken,];
+
+const getMacroTokens = function (expr: RuleValue): RuleToken[] {
+    const tokens: RuleToken[] = [];
+    for (const token of expr.tokens) {
+        if (macroTokens.includes(token)) {
+            tokens.push(token);
+        }
+    }
+    return tokens;
+}
+
+const toRowCells = function (cells: CellPoint[]): CellPoint[][] {
+    const indexes: number[] = [];
+    const rows: CellPoint[][] = [];
+    const rowMap: Map<number, CellPoint[]> = new Map<number, CellPoint[]>();
+    for (const cell of cells) {
+        let cells: CellPoint[] = [];
+        if (rowMap.has(cell.Row)) {
+            cells = rowMap.get(cell.Row);
+        } else {
+            indexes.push(cell.Row);
+        }
+        cells.push(cell);
+        rowMap.set(cell.Row, cells);
+    }
+    indexes.sort((a, b) => a - b);
+    for (const row of indexes) {
+        const values = rowMap.get(row);
+        rows.push(values);
+    }
+    return rows;
+}
+
+const resolveFunctionExpr = (ctx: CompileContext, templateValue: string, expr: RuleValue): string => {
+    const anyToken = defaultRuleTokenMap.get(RuleToken.AnyToken);
+    const funToken = defaultRuleTokenMap.get(RuleToken.FunctionPatternToken);
+    const functionTokens = expr.tokens.filter(s => s === RuleToken.FunctionPatternToken);
+    if (functionTokens === undefined || functionTokens.length <= 0) {
+        return templateValue;
+    }
+    const [start, end] = funToken.split(anyToken);
+    for (let times = functionTokens.length; times > 0; times--) {
+        const index = templateValue.indexOf(start);
+        const offset = templateValue.indexOf(end);
+        if (offset > 0 && index >= 0) {
+            templateValue = templateValue.replace(start, "").replace(end, "");
+        }
+    }
+    return templateValue;
+}
+
+const searchIndexOf = (str: string, substr: string[], position?: number): number => {
+    let index: number = NaN;
+    for (let sub of substr) {
+        if (position === undefined || position === null) {
+            index = str.indexOf(sub);
+        } else {
+            index = str.indexOf(sub, position);
+        }
+        if (!isNaN(index) && index >= 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+const resolveAliasExpr = (ctx: CompileContext, templateValue: string, index: number): string => {
+    const expr = ctx.currentExpr as RuleValue;
+    if (expr === undefined) {
+        throw new Error(`miss context expr value`);
+    }
+    let compileValue = templateValue;
+    const aliasToken = defaultRuleTokenMap.get(RuleToken.UseAliasToken);
+    let aliasTokens = expr.tokens.filter(s => s === RuleToken.UseAliasToken);
+    if (aliasTokens.length <= 0) {
+        const num = templateValue.split(aliasToken).length - 1;
+        if (num > 0) {
+            aliasTokens = new Array(num).fill(aliasToken);
+        }
+    }
+    if ((aliasTokens !== undefined && aliasTokens.length > 0)) {
+        for (let i = 0; i < aliasTokens.length; ++i) {
+            const token = aliasToken;
+            const start = compileValue.indexOf(token);
+            if (start < 0) {
+                break;
+            }
+            const offset = aliasTokens[i].length;
+            let end = searchIndexOf(compileValue, [',', '.', ')', ']'], start);
+            if (end < 0) {
+                end = compileValue.length
+            }
+            const sv = compileValue.substring(start + offset, end);
+            const pl = `${token}${sv}`;
+            const value = ctx.getAlias(sv);
+            if (value !== undefined) {
+                if (compileValue !== pl) {
+                    compileValue = value;
+                } else {
+                    compileValue = compileValue.replace(`${pl}`, value);
+                }
+            }
+        }
+    }
+    return compileValue;
+}
+
+const resolveValueExpr = (ctx: CompileContext, templateValue: string): string | null => {
+    const expr: RuleValue = ctx.currentExpr;
+    if (expr === undefined || expr.tokens.length <= 0) {
+        return templateValue;
+    }
+    const m = ctx.getContextMap();
+    const token = TokenParserManger.getTokenByCtx(m, RuleToken.VarPatternToken);
+    const anyToken = TokenParserManger.getTokenByCtx(m, RuleToken.AnyToken);
+    const [start, end] = token.split(anyToken);
+    if (!templateValue.startsWith(start)) {
+        templateValue = `${start}${templateValue}`
+    }
+    if (!templateValue.endsWith(end)) {
+        templateValue = `${templateValue}${end}`
+    }
+    return templateValue;
+}
+
+const compileRowCells = function (ctx: CompileContext, expr: RuleValue, cellPoints: CellPoint[], rowIndex: number, errs: Error[]) {
+    if (ctx.sheet === undefined) {
+        errs.push(new Error(`ctx miss worksheet`));
+        return;
+    }
+    ctx.currentExpr = expr;
+    cellPoints.forEach((cellPoint, index) => {
+        const r = cellPoint.Row;
+        const sheet = ctx.sheet;
+        const c = cellPoint.Column;
+        // 我们的解析逻辑中 X 已经转换为数字索引
+        const cell = sheet.findCell(r, c);
+        if (cell === undefined ||
+            (cell.value !== undefined && cell.value !== null && cell.value !== "")) {
+            return;
+        }
+        // 获取表达式模板
+        let templateValue = String(expr.value);
+        // 步骤 1: 解析宏指令
+        // 提取所有 compile: 开头的指令
+        const macroTokens = getMacroTokens(expr);
+        // 递归替换宏
+        templateValue = resolveFunctionExpr(ctx, templateValue, expr); // <?>
+        templateValue = resolveCompileMacroExpr(ctx, templateValue, macroTokens, index, cellPoints.length); // compile:Macro,compile:Gen
+        // 步骤 2: 解析变量表达式 ${...}
+        // 步骤 3: 处理纯别名引用 @T (如果外部直接写 @T 而没有 ${})
+        templateValue = resolveAliasExpr(ctx, templateValue, index);
+        // 写入单元格
+        cell.value = resolveValueExpr(ctx, templateValue);
+    })
+
+}
+
 const generateWorkSheetCellsPlaceholder = function (ctx: CompileContext, expr: RuleValue, sheet: exceljs.Worksheet): Error[] | undefined {
     const errs: Error[] = [];
-    // 获取解析出的 cells 列表
-    let cellsItems = expr.cells;
     const posExpr: RuleValue = expr.posExpr;
-    if(cellsItems === undefined &&
-        posExpr!==undefined &&
-        posExpr.value!==undefined){
+    let cellsItems = expr.cells;
+    if ((cellsItems === undefined || cellsItems.length <= 0) &&
+        posExpr !== undefined &&
+        posExpr.value !== undefined) {
         const r = posExpr.value as RangeCell;
-        if(r!==undefined){
+        if (r !== undefined) {
             cellsItems = r.getCells();
         }
     }
@@ -1451,62 +1793,18 @@ const generateWorkSheetCellsPlaceholder = function (ctx: CompileContext, expr: R
     ctx.sheet = sheet;
     const cells = cellsItems;
     // 遍历目标单元格
-    cells.forEach((cellPoint, index) => {
-        const {X, Y} = cellPoint;
-        // exceljs 中 row 是 1-based，col 也是 1-based
-        // 我们的解析逻辑中 X 已经转换为数字索引
-        const cell = sheet.getCell(Y, X);
-
-        // 获取表达式模板
-        let templateValue = String(expr.value);
-
-        // 步骤 1: 解析宏指令
-        // 提取所有 compile: 开头的指令
-        const macroRegex = /compile:(Gen|Macro)\([^)]+\)/g;
-        // 递归替换宏
-        templateValue = templateValue.replace(macroRegex, (match) => {
-            return resolveCompileMacro(ctx, match, index + 1, cells.length);
-        });
-
-        // 步骤 2: 解析变量表达式 ${...}
-        const varRegex = /\$\{([^}]+)\}/g;
-        templateValue = templateValue.replace(varRegex, (match, p1) => {
-            // p1 可能是 key 或 @T.key
-            // 尝试从 aliasMap 获取
-            if (p1.startsWith('@')) {
-                return ctx.getAlias(p1.substring(1)) || match;
-            }
-            return ctx.getAlias(p1) || match;
-        });
-
-        // 步骤 3: 处理纯别名引用 @T (如果外部直接写 @T 而没有 ${})
-        const aliasRegex = /@([a-zA-Z0-9_]+)/g;
-        templateValue = templateValue.replace(aliasRegex, (match, p1) => {
-            return ctx.getAlias(p1) || match;
-        });
-
-        // 步骤 4: 处理合并单元格特殊逻辑
-        // 如果当前单元格是合并区域的一部分，且规则定义了 mergeCell 逻辑
-        if (cell.isMerged) {
-            const range = getMergeRange(sheet, Y, X);
-            if (range) {
-                // 如果是合并单元格，且规则要求合并替换 (如 mergeCellToken)
-                // 这里简单处理：只在合并区域的左上角单元格写入值
-                if (range.left === X && range.top === Y) {
-                    cell.value = templateValue;
-                } else {
-                    // 其他部分清空或保持，避免覆盖
-                    // cell.value = null;
-                }
-                return;
-            }
-        }
-        // 写入单元格
-        cell.value = templateValue;
-    });
-
+    toRowCells(cells).forEach((cellPoints, index) => compileRowCells(ctx, expr, cellPoints, index, errs));
     return errs.length > 0 ? errs : undefined;
 };
+
+const hasGeneratorToken = function (tokens: RuleToken[]): boolean {
+    for (const t of tokens) {
+        if (compileCellTokens.includes(t)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 const compileWorkSheetPlaceholder = function (ctx: CompileContext, sheet: exceljs.Worksheet, result: RuleResult): Error[] | undefined {
     // check need compile sheet setting
@@ -1520,6 +1818,9 @@ const compileWorkSheetPlaceholder = function (ctx: CompileContext, sheet: excelj
         }
         // expr generat worksheet cells
         for (const expr of express) {
+            if (expr.tokens.length <= 0 || !hasGeneratorToken(expr.tokens)) {
+                continue;
+            }
             let err = generateWorkSheetCellsPlaceholder(ctx, expr, sheet);
             if (err !== undefined && err.length > 0) {
                 errs.push(...err);
@@ -1535,14 +1836,18 @@ const compileWorkSheetPlaceholder = function (ctx: CompileContext, sheet: excelj
 const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string>(
     data: T,
     ruleSheetName: string | number,
-    options?: RuleMapOptions): Promise<exceljs.Xlsx | Error[]> {
+    options?: RuleOptions): Promise<exceljs.Xlsx | Error[]> {
     const workbook = await loadWorkbook(data);
     const sheet = workbook.getWorksheet(ruleSheetName);
     if (sheet === undefined) {
         throw new Error(`compile error, ${ruleSheetName} not exists!`);
     }
+    if (workbook.worksheets === undefined) {
+        return workbook.xlsx;
+    }
     if (options === undefined) {
-        options = new RuleMapOptions();
+        const excludes = [ruleSheetName as string];
+        options = RuleMapOptions.withAllSheets(workbook, excludes);
     }
     // parse rules
     const result = parseWorkSheetRules(sheet, options);
@@ -1550,16 +1855,17 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
     if (errs !== undefined) {
         return errs;
     }
-    if (workbook.worksheets === undefined) {
-        return workbook.xlsx;
-    }
+
     // compile
     const compileErrs: Error[] = [];
     const ctx = CompileContext.create(options).loadAlias(result.rules);
     for (const [i, w] of workbook.worksheets.entries()) {
-        if (w.name === ruleSheetName || i === ruleSheetName) {
+        if (w.name === ruleSheetName ||
+            i === ruleSheetName ||
+            !ctx.filterSheet(w.name)) {
             continue;
         }
+
         let err = compileWorkSheetPlaceholder(ctx, w, result);
         if (err !== undefined && err.length > 0) {
             compileErrs.push(...err);
@@ -1588,6 +1894,7 @@ export {
     CompileContext,
     FilterMacroResult,
     isRuleToken,
+    hasGeneratorToken,
     getTokenParser,
     registerTokenParser,
     registerTokenParserMust,
