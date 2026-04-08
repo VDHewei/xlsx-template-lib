@@ -3,5 +3,5 @@
 ## Installation
 
 ```bash
-npm install @vdhewei/xlsx-template-lib
+npm install @haoyang_baba/xlsx-template-lib
 ```
