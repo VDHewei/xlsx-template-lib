@@ -24,7 +24,7 @@
   "packageManager": "pnpm@10.33.0",
   "repository": {
     "type": "git",
-    "url": "git://github.com/VDHewei/xlsx-template-lib.git"
+    "url": "https://github.com/VDHewei/xlsx-template-lib.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
