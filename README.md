@@ -3,5 +3,5 @@
 ## Installation
 
 ```bash
-npm install hao-xlsx-template-lib
+npm install @haoyang-baba/xlsx-template-lib
 ```
