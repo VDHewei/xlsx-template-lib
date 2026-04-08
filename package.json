@@ -2,11 +2,21 @@
   "name": "@vdhewei/xlsx-template-lib",
   "version": "1.2.1",
   "description": "xlsx template",
-  "main": "./src/index.ts",
   "files": [
     "dist",
     "README.md"
   ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsup",
     "prepublishOnly": "pnpm build",
