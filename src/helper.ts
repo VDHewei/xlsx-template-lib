@@ -51,6 +51,7 @@ const exprIndex = `index`;
 const defaultKey = `!!`;
 const numberKey = `!!number`;
 const codeKey = `!!codeKey`;
+const funcCommand = "fn:";
 
 enum RuleToken {
     AliasToken = 'alias',
@@ -676,7 +677,6 @@ class TokenParserManger {
             return {ok: false};
         }
         const equalToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.EqualToken);
-        const useAliasToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.UseAliasToken);
         const index = value.indexOf(equalToken);
         const offset = equalToken.length;
         if (index <= 0) return {ok: false, error: new Error(`merge cell config syntax error: ${value}`)};
@@ -736,8 +736,7 @@ class TokenParserManger {
             return {ok: false};
         }
         // Reuse logic similar to mergeCellParse for range/expression split
-        const reply = TokenParserManger.mergeCellParse(ctx, token, value);
-        return reply;
+        return TokenParserManger.mergeCellParse(ctx, token, value);
     }
 
     // $functionName($arg0:string,$arg1:string[],$arg2:string|number,$arg3:string|number)
@@ -750,7 +749,6 @@ class TokenParserManger {
         if (token !== RuleToken.FunctionPatternToken) {
             return {ok: false};
         }
-        const useAliasToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.UseAliasToken);
         const wordToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.AnyToken);
         const funcToken = TokenParserManger.getTokenByCtx(ctx, RuleToken.FunctionPatternToken);
         const splitIndex = funcToken.indexOf(wordToken);
@@ -1123,6 +1121,8 @@ const defaultRuleTokenParserMap = new Map<RuleToken, TokenParser>([
     [RuleToken.FunctionPatternToken, TokenParserManger.functionPatternParse],
 ]);
 
+const macroTokens: RuleToken[] = [RuleToken.CompileGenToken, RuleToken.CompileMacroToken,];
+
 function columnLetterToNumber(letter: string): number {
     let num = 0;
     for (let i = 0; i < letter.length; i++) {
@@ -1228,6 +1228,7 @@ const getExprEnd = function (macroExpr: string, matchIndex: number, rparenToken:
 }
 
 const macroFormatters: string[] = [numberKey, codeKey];
+type MacroUnitHelper = (v: string) => string;
 
 // compile:Macro(type, X_arr, Y_arr, formatter)
 const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroArgs {
@@ -1256,8 +1257,6 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
     return extracResult;
 }
 
-type MacroUnitHelper = (v: string) => string;
-
 const __codeKey = (str: string): string => {
     let vs = str.trim().replace("-", "_").replace("/", "_").trim();
     for (; vs.indexOf("__") >= 0;) {
@@ -1278,7 +1277,6 @@ const macroFormatter: Map<string, MacroUnitHelper> = new Map<string, MacroUnitHe
     [numberKey, __numberKey],
     [defaultKey, (v: string): string => v],
 ]);
-
 
 const execMacroFormat = function (value: string, formatter: string): string {
     if (!macroFormatter.has(formatter)) {
@@ -1616,8 +1614,6 @@ const compileCheck = function (iv: RuleResult, ctx: RuleOptions): Error[] | unde
     return undefined;
 }
 
-const macroTokens: RuleToken[] = [RuleToken.CompileGenToken, RuleToken.CompileMacroToken,];
-
 const getMacroTokens = function (expr: RuleValue): RuleToken[] {
     const tokens: RuleToken[] = [];
     for (const token of expr.tokens) {
@@ -1662,7 +1658,7 @@ const resolveFunctionExpr = (ctx: CompileContext, templateValue: string, expr: R
         const index = templateValue.indexOf(start);
         const offset = templateValue.indexOf(end);
         if (offset > 0 && index >= 0) {
-            templateValue = templateValue.replace(start, "").replace(end, "");
+            templateValue = templateValue.replace(start, funcCommand).replace(end, "");
         }
     }
     return templateValue;
@@ -1713,7 +1709,7 @@ const resolveAliasExpr = (ctx: CompileContext, templateValue: string, index: num
             const pl = `${token}${sv}`;
             const value = ctx.getAlias(sv);
             if (value !== undefined) {
-                if (compileValue !== pl) {
+                if (compileValue === pl) {
                     compileValue = value;
                 } else {
                     compileValue = compileValue.replace(`${pl}`, value);
@@ -1766,9 +1762,7 @@ const compileRowCells = function (ctx: CompileContext, expr: RuleValue, cellPoin
         // 递归替换宏
         templateValue = resolveFunctionExpr(ctx, templateValue, expr); // <?>
         templateValue = resolveCompileMacroExpr(ctx, templateValue, macroTokens, index, cellPoints.length); // compile:Macro,compile:Gen
-        // 步骤 2: 解析变量表达式 ${...}
-        // 步骤 3: 处理纯别名引用 @T (如果外部直接写 @T 而没有 ${})
-        templateValue = resolveAliasExpr(ctx, templateValue, index);
+        templateValue = resolveAliasExpr(ctx, templateValue, index); // @
         // 写入单元格
         cell.value = resolveValueExpr(ctx, templateValue);
     })
@@ -1833,17 +1827,29 @@ const compileWorkSheetPlaceholder = function (ctx: CompileContext, sheet: excelj
     return undefined;
 }
 
-const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string>(
+type CompileResult = {
+    workbook:exceljs.Workbook
+    configure?: RuleResult
+    errs?: Error[]
+}
+
+const compile = async function <T extends ArrayBuffer | Buffer | string>(
     data: T,
     ruleSheetName: string | number,
-    options?: RuleOptions): Promise<exceljs.Xlsx | Error[]> {
+    options?: RuleOptions): Promise<CompileResult> {
     const workbook = await loadWorkbook(data);
     const sheet = workbook.getWorksheet(ruleSheetName);
     if (sheet === undefined) {
-        throw new Error(`compile error, ${ruleSheetName} not exists!`);
+        return {
+            workbook,
+            errs:[new Error(`compile error, ${ruleSheetName} not exists!`)],
+        };
     }
     if (workbook.worksheets === undefined) {
-        return workbook.xlsx;
+        return {
+            workbook,
+            errs: [new Error(`worksheet, ${ruleSheetName} not exists!`)],
+        };
     }
     if (options === undefined) {
         const excludes = [ruleSheetName as string];
@@ -1853,9 +1859,12 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
     const result = parseWorkSheetRules(sheet, options);
     const errs = compileCheck(result, options);
     if (errs !== undefined) {
-        return errs;
+        return  {
+            errs,
+            workbook,
+            configure:result,
+        };
     }
-
     // compile
     const compileErrs: Error[] = [];
     const ctx = CompileContext.create(options).loadAlias(result.rules);
@@ -1872,27 +1881,65 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
         }
     }
     if (compileErrs.length > 0) {
-        return compileErrs;
+        return {
+            workbook,
+            configure: result,
+            errs: compileErrs,
+        };
     }
-    return workbook.xlsx;
+    return {
+        workbook,
+        configure: result,
+    };
+}
+
+const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string>(
+    data: T,
+    sheetName: string | number,
+    options?: RuleOptions): Promise<exceljs.Xlsx | Error[]> {
+   const reply = await compile(data,sheetName,options);
+   if(reply.errs!==undefined && reply.errs.length>0){
+        return reply.errs;
+   }
+   return reply.workbook.xlsx;
+}
+
+class ExprResolver {
+    static compile = compile;
+    static toRowCells = toRowCells;
+    static getExprEnd = getExprEnd;
+    static compileCheck = compileCheck;
+    static extractMacro = extractMacro;
+    static compileRowCells = compileRowCells;
+    static searchIndexOf = searchIndexOf;
+    static resolveAliasExpr = resolveAliasExpr;
+    static resolveValueExpr = resolveValueExpr;
+    static resolveFunctionExpr = resolveFunctionExpr;
+    static resolveCompileMacroGen = resolveCompileMacroGen;
+    static resolveCompileMacroExpr = resolveCompileMacroExpr;
 }
 
 export {
-    scanCellSetPlaceholder,
-    workSheetSetPlaceholder,
     CellPosition,
+    CompileResult,
     DefaultPlaceholderCellValue,
     PlaceholderCellValue,
     exceljs,
     RuleToken,
-    parseWorkSheetRules,
-    columnLetterToNumber,
-    columnNumberToLetter,
     TokenParserManger,
     RuleResult,
     RuleOptions,
     CompileContext,
     FilterMacroResult,
+    MacroUnitHelper,
+    MacroArgs,
+    ExtractMacroArgs,
+    ExprResolver,
+    scanCellSetPlaceholder,
+    workSheetSetPlaceholder,
+    parseWorkSheetRules,
+    columnLetterToNumber,
+    columnNumberToLetter,
     isRuleToken,
     hasGeneratorToken,
     getTokenParser,
@@ -1901,5 +1948,4 @@ export {
     compileWorkSheet,
     compileWorkSheetPlaceholder,
     loadWorkbook,
-
 };
