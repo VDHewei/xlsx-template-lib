@@ -5,3 +5,4 @@ dist/
 .vscode/
 .env
 .docker/
+.npmrc
