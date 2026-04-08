@@ -27,7 +27,7 @@
     "url": "https://github.com/VDHewei/xlsx-template-lib.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "dependencies": {
     "@types/elementtree": "^0.1.5",
