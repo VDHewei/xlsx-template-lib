@@ -1,5 +1,5 @@
 {
-  "name": "@haoyang-baba/xlsx-template-lib",
+  "name": "@vdhewei/xlsx-template-lib",
   "version": "1.2.0",
   "description": "xlsx template",
   "main": "./src/index.ts",
