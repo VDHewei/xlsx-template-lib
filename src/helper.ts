@@ -1828,7 +1828,7 @@ const compileWorkSheetPlaceholder = function (ctx: CompileContext, sheet: excelj
 }
 
 type CompileResult = {
-    workbook:exceljs.Workbook
+    workbook: exceljs.Workbook
     configure?: RuleResult
     errs?: Error[]
 }
@@ -1842,7 +1842,7 @@ const compile = async function <T extends ArrayBuffer | Buffer | string>(
     if (sheet === undefined) {
         return {
             workbook,
-            errs:[new Error(`compile error, ${ruleSheetName} not exists!`)],
+            errs: [new Error(`compile error, ${ruleSheetName} not exists!`)],
         };
     }
     if (workbook.worksheets === undefined) {
@@ -1859,10 +1859,10 @@ const compile = async function <T extends ArrayBuffer | Buffer | string>(
     const result = parseWorkSheetRules(sheet, options);
     const errs = compileCheck(result, options);
     if (errs !== undefined) {
-        return  {
+        return {
             errs,
             workbook,
-            configure:result,
+            configure: result,
         };
     }
     // compile
@@ -1897,16 +1897,68 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
     data: T,
     sheetName: string | number,
     options?: RuleOptions): Promise<exceljs.Xlsx | Error[]> {
-   const reply = await compile(data,sheetName,options);
-   if(reply.errs!==undefined && reply.errs.length>0){
+    const reply = await compile(data, sheetName, options);
+    if (reply.errs !== undefined && reply.errs.length > 0) {
         return reply.errs;
-   }
-   return reply.workbook.xlsx;
+    }
+    return reply.workbook.xlsx;
+}
+
+const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<string, string> => {
+    let sv: Map<RuleToken, RuleValue[]>;
+    const alias = new Map<string, string>();
+    if (!(m instanceof Map) && m.rules !== undefined) {
+        sv = m.rules;
+    } else if (m instanceof Map) {
+        if (m.size <= 0 || !m.has(RuleToken.AliasToken)) {
+            return alias;
+        }
+        sv = m;
+    } else {
+        return alias;
+    }
+    const values = sv.get(RuleToken.AliasToken);
+    for (const vs of values) {
+        if (typeof vs.value === "string") {
+            alias.set(vs.key, vs.value as string);
+        }
+    }
+    return alias;
+}
+
+const removeUnExportSheets = (w: exceljs.Workbook, options: RuleOptions): exceljs.Workbook => {
+    const removes: string[] = [];
+    if (options.compileSheets === undefined || options.compileSheets.length <= 0) {
+        for (const [i, v] of w.worksheets.entries()) {
+            const sheetName = v.name;
+            if (sheetName.endsWith(".config") ||
+                sheetName.endsWith(".json")) {
+                removes.push(sheetName);
+            }
+        }
+    } else {
+        for (const [i, v] of w.worksheets.entries()) {
+            if (!options.compileSheets.includes(v.name)) {
+                removes.push(v.name);
+            }
+        }
+    }
+    for (const [_,name] of removes.entries()) {
+        w.removeWorksheet(name)
+    }
+    return w;
+}
+
+const toBuffer = async (w: exceljs.Workbook): Promise<Buffer> => {
+    const arrayBuffer = await w.xlsx.writeBuffer()
+    return Buffer.from(arrayBuffer);
 }
 
 class ExprResolver {
+    static toBuffer = toBuffer;
     static compile = compile;
     static toRowCells = toRowCells;
+    static fetchAlias = fetchAlias;
     static getExprEnd = getExprEnd;
     static compileCheck = compileCheck;
     static extractMacro = extractMacro;
@@ -1915,6 +1967,7 @@ class ExprResolver {
     static resolveAliasExpr = resolveAliasExpr;
     static resolveValueExpr = resolveValueExpr;
     static resolveFunctionExpr = resolveFunctionExpr;
+    static removeUnExportSheets = removeUnExportSheets;
     static resolveCompileMacroGen = resolveCompileMacroGen;
     static resolveCompileMacroExpr = resolveCompileMacroExpr;
 }
@@ -1926,6 +1979,7 @@ export {
     PlaceholderCellValue,
     exceljs,
     RuleToken,
+    RuleMapOptions,
     TokenParserManger,
     RuleResult,
     RuleOptions,

@@ -1,14 +1,14 @@
 import * as fs from "node:fs/promises";
 import {BufferType, generateXlsxTemplate} from './core'
 import {assertType, describe, expect, expectTypeOf, it, Mock, vi} from 'vitest'
-import {AddCommand, Argument, CmdFunction, generateCommandsXlsxTemplate, getCommands} from './extends'
+import {AddCommand, Argument,compileRuleSheetName, CmdFunction, generateCommandsXlsxTemplate,generateCommandsXlsxTemplateWithCompile, getCommands} from './extends'
 import {
     compileWorkSheet,
     DefaultPlaceholderCellValue,
     exceljs,
     loadWorkbook,
     parseWorkSheetRules,
-    PlaceholderCellValue,
+    PlaceholderCellValue, RuleMapOptions,
     RuleResult,
     RuleToken,
     scanCellSetPlaceholder
@@ -56,9 +56,12 @@ function getPlaceholder(): {
     }
 }
 
-function testEnv(key: symbol, value: string): boolean {
+function testEnv(key: symbol, value: string,extKey?: string): boolean {
     const k = key.toString();
-    const x = k.substring(7, k.length - 1);
+    let x = k.substring(7, k.length - 1);
+    if(extKey!==undefined && extKey!==""){
+        x = `${x}.${extKey}`
+    }
     return process.env[x] === value;
 }
 
@@ -256,4 +259,17 @@ describe('compileWorkSheet', {tags: ["compile"]}, () => {
             await sv.writeFile(`./test_data/test_compile_${new Date().valueOf()}.xlsx`);
         }
     });
+
+    it('withData', async () => {
+        const data = await fs.readFile("./test_data/data.json");
+        const values = JSON.parse(data.toString('utf-8'));
+        const xlsx = await fs.readFile("./test_data/test_compile.xlsx");
+        const compileOptions = new RuleMapOptions();
+        compileOptions.sheetName = compileRuleSheetName;
+        const bf = await generateCommandsXlsxTemplateWithCompile(xlsx, values,compileOptions,{type:BufferType.NodeBuffer});
+        if (testEnv(CompileTest, "true",`WITH_DATA`)) {
+            await fs.writeFile(`./test_data/test_compile_${new Date().valueOf()}_data.xlsx`, bf);
+        }
+        expect(bf).toBeInstanceOf(Buffer)
+    })
 });

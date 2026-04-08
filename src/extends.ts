@@ -1,5 +1,14 @@
-import JsZip from "jszip";
-import {Placeholder,Workbook,FullOptions,OutputByType, defaultValueDotGet, valueDotGet, QueryFunction} from "./core";
+import JsZip, {OutputType} from "jszip";
+import {
+    Placeholder,
+    Workbook,
+    FullOptions,
+    OutputByType,
+    defaultValueDotGet,
+    valueDotGet,
+    QueryFunction,
+} from "./core";
+import {ExprResolver, RuleOptions} from "./helper";
 
 type Argument = {
     root: string;
@@ -25,6 +34,8 @@ function hasToString(obj: any): obj is HasToString {
 }
 
 const tokenNextIter = [`root`, `groups`, `suffix`, `default`];
+
+const aliasKey = `__alias`;
 
 class ArgumentData {
     root: string;
@@ -54,8 +65,8 @@ class ArgumentData {
         };
     }
 
-    Add(startToken: string, value: string|undefined) {
-        if (value === undefined){
+    Add(startToken: string, value: string | undefined) {
+        if (value === undefined) {
             this.tokenIterIndex++;
             return;
         }
@@ -81,12 +92,12 @@ class ArgumentData {
                 if (token === "root") {
                     this.root = value;
                     this.tokenIterIndex++;
-                }else if (token === "groups") {
+                } else if (token === "groups") {
                     this.groups.push(value);
-                }else if (token=== "suffix") {
+                } else if (token === "suffix") {
                     this.suffix = value;
                     this.tokenIterIndex++;
-                }else if (token === "default") {
+                } else if (token === "default") {
                     this.default = value;
                     this.tokenIterIndex++;
                 }
@@ -111,34 +122,34 @@ class ArgumentData {
 }
 
 class ArgumentValue {
-   private readonly value: any;
-   private readonly defaultValue: any;
+    private readonly value: any;
+    private readonly defaultValue: any;
 
-    constructor(value: any,defValue: any) {
+    constructor(value: any, defValue: any) {
         this.value = value;
         this.defaultValue = defValue;
     }
 
     isUndefined(): boolean {
-        return  this.value === undefined;
+        return this.value === undefined;
     }
 
     getDefault(): any {
         return this.defaultValue;
     }
 
-    getNumber() : number {
+    getNumber(): number {
         return Number(this.value);
     }
 
-    toString() : string {
-        if(this.isUndefined()){
+    toString(): string {
+        if (this.isUndefined()) {
             return "";
         }
-        if(typeof this.value === "string"){
+        if (typeof this.value === "string") {
             return this.value as string;
         }
-        if(hasToString(this.value)){
+        if (hasToString(this.value)) {
             return this.value.toString();
         }
         return "";
@@ -160,7 +171,7 @@ const ArgumentValueLoader = (values: Object | Record<string, any>, args: Argumen
     const items: ArgumentValue[] = [];
     for (let k of all) {
         let vs = valueDotGet(values, k);
-        items.push(new ArgumentValue(vs,args.default));
+        items.push(new ArgumentValue(vs, args.default));
     }
     return items;
 }
@@ -183,7 +194,7 @@ const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Ar
             sum = sum + Number(num);
         }
     }
-    if(emptyTimes === argc){
+    if (emptyTimes === argc) {
         return undefined;
     }
     if (isNaN(sum)) {
@@ -198,7 +209,7 @@ const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: 
     let emptyTimes = 0;
     let argc = argument.groups.length;
     let items = ArgumentValueLoader(values, argument);
-    for (let value of items){
+    for (let value of items) {
         let num = value.getNumber();
         if (value.isUndefined()) {
             emptyTimes++;
@@ -213,7 +224,7 @@ const sub_value: CmdFunction = (values: Object | Record<string, any>, argument: 
             sub = sub - Number(num);
         }
     }
-    if(emptyTimes === argc){
+    if (emptyTimes === argc) {
         return undefined;
     }
     if (isNaN(sub)) {
@@ -242,11 +253,11 @@ const resolveArgument = function (p: Placeholder, data: object | Record<string, 
     if (fn !== "") {
         let key: string = "";
         let startT: string = "";
-        const endToken = [`)`,`,`, `]`];
+        const endToken = [`)`, `,`, `]`];
         const startToken = [`(`, `,`, `[`];
         const tokenRow = value.split(`${fn}`)[1]
         const len = tokenRow.length;
-        for (let i = 0; i < len ; i++) {
+        for (let i = 0; i < len; i++) {
             let start = startToken.includes(tokenRow[i]);
             let end = endToken.includes(tokenRow[i]);
             if (start) {
@@ -256,16 +267,16 @@ const resolveArgument = function (p: Placeholder, data: object | Record<string, 
                 key = `${key}${tokenRow[i]}`;
             }
             if (end) {
-                if(key===""){
-                    args.Add(startT,undefined);
-                }else {
+                if (key === "") {
+                    args.Add(startT, undefined);
+                } else {
                     args.Add(startT, key);
                     key = "";
                 }
             }
         }
     }
-    const alias = valueDotGet(data, `__alias`);
+    const alias = valueDotGet(data, aliasKey);
     if (alias !== undefined) {
         args.ParseAlias(alias)
     }
@@ -309,14 +320,47 @@ const AddCommandMust = (key: string, h: CmdFunction): void => {
 
 // xlsx 模板 生成 - 函数一键调用
 const generateCommandsXlsxTemplate = async function <T extends JsZip.OutputType>(data: Buffer, values: Object, options?: JsZip.JSZipGeneratorOptions<T> & FullOptions): Promise<OutputByType[T]> {
-    const w = await Workbook.parse(data,options);
+    const w = await Workbook.parse(data, options);
     w.setQueryFunctionHandler(commandExtendQuery);
     await w.substituteAll(values);
     return w.generate(options);
 }
 
-const getCommands = () : Map<string,CmdFunction> => {
+const getCommands = (): Map<string, CmdFunction> => {
     return defaultCommands;
+}
+
+type AutoOptions = RuleOptions & {sheetName?:string};
+
+const compileRuleSheetName = "export_metadata.config";
+
+const mergeMap = function (source: Map<string, string>, dest: Map<string, string>): Map<string, string> {
+    for (const [key, value] of dest.entries()) {
+        source.set(key, value)
+    }
+    return source;
+}
+
+// xlsx 模板 编译生成 - 函数一键调用
+const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.OutputType>(data: Buffer, values: Object, compileOptions: AutoOptions, options?: JsZip.JSZipGeneratorOptions<T> & FullOptions): Promise<OutputByType[T]> {
+    if (compileOptions.sheetName === undefined || compileOptions.sheetName === "") {
+        compileOptions.sheetName = compileRuleSheetName;
+    }
+    const result = await ExprResolver.compile(data, compileOptions.sheetName,compileOptions);
+    if (result.errs !== undefined && result.errs.length > 0) {
+        throw result.errs[0];
+    }
+    let alias = ExprResolver.fetchAlias(result.configure);
+    if (values[aliasKey] !== undefined && values[aliasKey] instanceof Map) {
+        alias = mergeMap(alias, values[aliasKey] as Map<string, string>);
+    }
+    values[aliasKey] = alias;
+    result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOptions);
+    const wb = await ExprResolver.toBuffer(result.workbook);
+    const w = await Workbook.parse(wb, options);
+    w.setQueryFunctionHandler(commandExtendQuery);
+    await w.substituteAll(values);
+    return w.generate(options);
 }
 
 export {
@@ -327,8 +371,11 @@ export {
     CmdFunction,
     Argument,
     ArgumentData,
+    AutoOptions,
+    compileRuleSheetName,
     AddCommand,
     AddCommandMust,
     ArgumentValueLoader,
     generateCommandsXlsxTemplate,
+    generateCommandsXlsxTemplateWithCompile,
 }
