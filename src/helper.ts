@@ -1842,7 +1842,6 @@ const compile = async function <T extends ArrayBuffer | Buffer | string>(
     if (sheet === undefined) {
         return {
             workbook,
-            errs: [new Error(`compile error, ${ruleSheetName} not exists!`)],
         };
     }
     if (workbook.worksheets === undefined) {
