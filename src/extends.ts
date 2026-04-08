@@ -8,7 +8,7 @@ import {
     valueDotGet,
     QueryFunction,
 } from "./core";
-import {ExprResolver, RuleOptions} from "./helper";
+import {ExprResolver, RuleOptions, RuleResult} from "./helper";
 
 type Argument = {
     root: string;
@@ -341,6 +341,15 @@ const mergeMap = function (source: Map<string, string>, dest: Map<string, string
     return source;
 }
 
+const autoRegisterAlias = function (values: Object,configure: RuleResult): Object {
+    let alias = ExprResolver.fetchAlias(configure);
+    if (values[aliasKey] !== undefined && values[aliasKey] instanceof Map) {
+        alias = mergeMap(alias, values[aliasKey] as Map<string, string>);
+    }
+    values[aliasKey] = alias;
+    return values;
+}
+
 // xlsx 模板 编译生成 - 函数一键调用
 const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.OutputType>(data: Buffer, values: Object, compileOptions: AutoOptions, options?: JsZip.JSZipGeneratorOptions<T> & FullOptions): Promise<OutputByType[T]> {
     if (compileOptions.sheetName === undefined || compileOptions.sheetName === "") {
@@ -350,11 +359,7 @@ const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.
     if (result.errs !== undefined && result.errs.length > 0) {
         throw result.errs[0];
     }
-    let alias = ExprResolver.fetchAlias(result.configure);
-    if (values[aliasKey] !== undefined && values[aliasKey] instanceof Map) {
-        alias = mergeMap(alias, values[aliasKey] as Map<string, string>);
-    }
-    values[aliasKey] = alias;
+    values = autoRegisterAlias(values,result.configure);
     result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOptions);
     const wb = await ExprResolver.toBuffer(result.workbook);
     const w = await Workbook.parse(wb, options);
@@ -364,6 +369,8 @@ const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.
 }
 
 export {
+    mergeMap,
+    autoRegisterAlias,
     commandExtendQuery,
     getCommands,
     resolveArgument,
