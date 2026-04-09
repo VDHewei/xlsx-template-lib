@@ -1952,6 +1952,9 @@ const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<string, st
 
 const removeUnExportSheets = (w: exceljs.Workbook, options: RuleOptions): exceljs.Workbook => {
     const removes: string[] = [];
+    if (typeof options.skipRemoveUnExportSheet === "boolean" && options.skipRemoveUnExportSheet === true) {
+        return w;
+    }
     if (options.compileSheets === undefined || options.compileSheets.length <= 0) {
         for (const [i, v] of w.worksheets.entries()) {
             const sheetName = v.name;

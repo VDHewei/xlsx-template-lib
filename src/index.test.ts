@@ -275,8 +275,11 @@ describe('compileWorkSheet', {tags: ["compile"]}, () => {
         const compileOptions = new RuleMapOptions();
         compileOptions.sheetName = compileRuleSheetName;
         const save = testEnv(CompileTest, "true", `WITH_DATA`);
-        compileOptions.save = save;
+        const output = testEnv(CompileTest, "true", `COMPILE_SAVE`);
+        const skipRemove = testEnv(CompileTest, "true", `SKIP_REMOVE`);
+        compileOptions.save = output;
         compileOptions.saveFile = "./test_data/withData_";
+        compileOptions.skipRemoveUnExportSheet = skipRemove;
         const bf = await generateCommandsXlsxTemplateWithCompile(xlsx, values, compileOptions, {type: BufferType.NodeBuffer});
         if (save) {
             await fs.writeFile(`./test_data/test_compile_${new Date().valueOf()}_data.xlsx`, bf);
