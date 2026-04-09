@@ -1259,14 +1259,20 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
 }
 
 const __codeKey: MacroUnitHelper = (str: string): string => {
-    let vs = str.trim().replace("-", "_").replace("/", "_").trim();
-    for (; vs.indexOf("__") >= 0;) {
-        vs = vs.replace("__", "_")
+    const replaces : string[]= [` `, `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
+    for(const k in replaces){
+        str = str.replace(k,"_").trim();
+        if(str.indexOf("__") >=0) {
+            str = str.replace( "__", "_")
+        }
     }
-    for (; vs.indexOf(" ") >= 0;) {
-        vs = vs.replace(" ", "")
+    if(str.startsWith("_")){
+        str = str.substring(1)
     }
-    return vs.trim().toUpperCase();
+    if(str.endsWith("_")){
+        str = str.substring(0,str.length-1)
+    }
+    return str.toUpperCase();
 }
 
 const __numberKey: MacroUnitHelper = (str: string): string => {
