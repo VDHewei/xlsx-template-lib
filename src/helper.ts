@@ -51,6 +51,7 @@ const exprIndex = `index`;
 const defaultKey = `!!`;
 const numberKey = `!!number`;
 const codeKey = `!!codeKey`;
+const codeAliasKey = `!!codeAliasKey`;
 const funcCommand = "fn:";
 
 enum RuleToken {
@@ -1227,7 +1228,7 @@ const getExprEnd = function (macroExpr: string, matchIndex: number, rparenToken:
     return macroExpr.indexOf(rparenToken, matchIndex);
 }
 
-const macroFormatters: string[] = [numberKey, codeKey];
+const macroFormatters: string[] = [numberKey, codeKey, codeAliasKey];
 type MacroUnitHelper = (v: string) => string;
 
 // compile:Macro(type, X_arr, Y_arr, formatter)
@@ -1257,7 +1258,7 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
     return extracResult;
 }
 
-const __codeKey = (str: string): string => {
+const __codeKey: MacroUnitHelper = (str: string): string => {
     let vs = str.trim().replace("-", "_").replace("/", "_").trim();
     for (; vs.indexOf("__") >= 0;) {
         vs = vs.replace("__", "_")
@@ -1268,13 +1269,22 @@ const __codeKey = (str: string): string => {
     return vs.trim().toUpperCase();
 }
 
-const __numberKey = (str: string): string => {
+const __numberKey: MacroUnitHelper = (str: string): string => {
     return Number.parseInt(str, 10).toString()
+}
+
+const __codeAliasKey: MacroUnitHelper = (str: string): string => {
+    const key = __codeKey(str);
+    if (key !== "") {
+        return `${defaultRuleTokenParserMap.get(RuleToken.UseAliasToken)}${key}`;
+    }
+    return '';
 }
 
 const macroFormatter: Map<string, MacroUnitHelper> = new Map<string, MacroUnitHelper>([
     [codeKey, __codeKey],
     [numberKey, __numberKey],
+    [codeAliasKey, __codeAliasKey],
     [defaultKey, (v: string): string => v],
 ]);
 
