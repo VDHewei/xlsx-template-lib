@@ -1259,11 +1259,11 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
 }
 
 const __codeKey: MacroUnitHelper = (str: string): string => {
-    const replaces : string[]= [` `, `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
-    for(const k in replaces){
-        str = str.replace(k,"_").trim();
+    const replaces : string[]= [" ", `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
+    for(const k of replaces){
+        str = str.replaceAll(k,"_").trim();
         if(str.indexOf("__") >=0) {
-            str = str.replace( "__", "_")
+            str = str.replaceAll( "__", "_")
         }
     }
     if(str.startsWith("_")){
