@@ -191,16 +191,16 @@ class RuleMapOptions implements RuleOptions {
 
     parseDefault(worksheet: exceljs.Worksheet): RuleOptions {
         this.ruleKeyMap = mergeOption(this.ruleKeyMap, defaultRuleTokenMap);
-        if (this.startLine === undefined) {
+        if (this.startLine === undefined || isNaN(this.startLine) || this.startLine < 0) {
             this.startLine = 1;
         }
-        if (this.endLine === undefined) {
+        if (this.endLine === undefined || isNaN(this.endLine) || this.endLine < 0) {
             this.endLine = worksheet.rowCount;
         }
-        if (this.startColumn === undefined) {
+        if (this.startColumn === undefined || isNaN(this.startColumn) || this.startColumn < 0) {
             this.startColumn = 1;
         }
-        if (this.endColumn === undefined) {
+        if (this.endColumn === undefined || isNaN(this.endColumn) || this.endColumn < 0) {
             this.endColumn = worksheet.columnCount;
         }
         return this;
@@ -1833,6 +1833,27 @@ type CompileResult = {
     errs?: Error[]
 }
 
+const loadCompileSheets = (workbook: exceljs.Workbook, ruleSheetName: string | number): string[] => {
+    let first: string;
+    let sheets: string[] = [];
+    for (const [_, w] of workbook.worksheets.entries()) {
+        if (w.name === ruleSheetName) {
+            continue;
+        }
+        if (first === "") {
+            first = w.name;
+        }
+        if (!w.name.endsWith(".json") &&
+            !w.name.endsWith(".config")) {
+            sheets.push(w.name);
+        }
+    }
+    if (sheets.length <= 0 && first !== "") {
+        sheets.push(first);
+    }
+    return sheets;
+}
+
 const compile = async function <T extends ArrayBuffer | Buffer | string>(
     data: T,
     ruleSheetName: string | number,
@@ -1853,6 +1874,10 @@ const compile = async function <T extends ArrayBuffer | Buffer | string>(
     if (options === undefined) {
         const excludes = [ruleSheetName as string];
         options = RuleMapOptions.withAllSheets(workbook, excludes);
+    }
+    options = options.parseDefault(sheet);
+    if (options.compileSheets === undefined || options.compileSheets.length === 0) {
+        options.compileSheets = loadCompileSheets(workbook, ruleSheetName);
     }
     // parse rules
     const result = parseWorkSheetRules(sheet, options);
@@ -1942,7 +1967,7 @@ const removeUnExportSheets = (w: exceljs.Workbook, options: RuleOptions): excelj
             }
         }
     }
-    for (const [_,name] of removes.entries()) {
+    for (const [_, name] of removes.entries()) {
         w.removeWorksheet(name)
     }
     return w;
@@ -2001,4 +2026,5 @@ export {
     compileWorkSheet,
     compileWorkSheetPlaceholder,
     loadWorkbook,
+    loadCompileSheets,
 };

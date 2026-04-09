@@ -1,4 +1,4 @@
-import JsZip, {OutputType} from "jszip";
+import JsZip from "jszip";
 import {
     Placeholder,
     Workbook,
@@ -9,6 +9,7 @@ import {
     QueryFunction,
 } from "./core";
 import {ExprResolver, RuleOptions, RuleResult} from "./helper";
+import fs from "node:fs/promises";
 
 type Argument = {
     root: string;
@@ -330,7 +331,7 @@ const getCommands = (): Map<string, CmdFunction> => {
     return defaultCommands;
 }
 
-type AutoOptions = RuleOptions & {sheetName?:string};
+type AutoOptions = RuleOptions & { sheetName?: string };
 
 const compileRuleSheetName = "export_metadata.config";
 
@@ -341,7 +342,7 @@ const mergeMap = function (source: Map<string, string>, dest: Map<string, string
     return source;
 }
 
-const autoRegisterAlias = function (values: Object,configure: RuleResult): Object {
+const autoRegisterAlias = function (values: Object, configure: RuleResult): Object {
     let alias = ExprResolver.fetchAlias(configure);
     if (values[aliasKey] !== undefined && values[aliasKey] instanceof Map) {
         alias = mergeMap(alias, values[aliasKey] as Map<string, string>);
@@ -350,18 +351,27 @@ const autoRegisterAlias = function (values: Object,configure: RuleResult): Objec
     return values;
 }
 
+const saveCompile = async (compileOptions: AutoOptions, wb: Buffer): Promise<void> => {
+    if (typeof compileOptions.save === "boolean" && compileOptions.save === true &&
+        typeof compileOptions.saveFile === "string" && compileOptions.saveFile !== "") {
+        const path = compileOptions.saveFile as string;
+        await fs.writeFile(`${path}compile_${new Date().valueOf()}.xlsx`, wb);
+    }
+}
+
 // xlsx 模板 编译生成 - 函数一键调用
 const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.OutputType>(data: Buffer, values: Object, compileOptions: AutoOptions, options?: JsZip.JSZipGeneratorOptions<T> & FullOptions): Promise<OutputByType[T]> {
     if (compileOptions.sheetName === undefined || compileOptions.sheetName === "") {
         compileOptions.sheetName = compileRuleSheetName;
     }
-    const result = await ExprResolver.compile(data, compileOptions.sheetName,compileOptions);
+    const result = await ExprResolver.compile(data, compileOptions.sheetName, compileOptions);
     if (result.errs !== undefined && result.errs.length > 0) {
         throw result.errs[0];
     }
-    values = autoRegisterAlias(values,result.configure);
+    values = autoRegisterAlias(values, result.configure);
     result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOptions);
     const wb = await ExprResolver.toBuffer(result.workbook);
+    await saveCompile(compileOptions, wb);
     const w = await Workbook.parse(wb, options);
     w.setQueryFunctionHandler(commandExtendQuery);
     await w.substituteAll(values);
