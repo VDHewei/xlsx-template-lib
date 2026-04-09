@@ -2,7 +2,7 @@ import { defineConfig } from 'tsup'
 
 export default defineConfig({
     // 入口文件
-    entry: ['src/index.ts'],
+    entry: ['src/index.ts','src/bin.ts'],
     // 同时输出 CommonJS 和 ES Module 格式
     format: ['cjs', 'esm'],
     // 生成类型声明文件
@@ -21,5 +21,5 @@ export default defineConfig({
     // 清理旧的 dist 文件
     clean: true,
     // 外部依赖不打入包内（非常重要！）
-    external: ['@types/elementtree','image-size','jszip','exceljs'],
+    external: ['@types/elementtree','image-size','jszip','exceljs','commander','chalk'],
 })

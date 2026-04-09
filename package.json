@@ -17,8 +17,12 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "xlsx-cli": "./dist/bin.js"
+  },
   "scripts": {
     "build": "tsup",
+    "build-cli": "tsup src/bin.ts",
     "prepublishOnly": "pnpm build",
     "test": "vitest",
     "test:run": "vitest run"
@@ -41,6 +45,8 @@
   },
   "dependencies": {
     "@types/elementtree": "^0.1.5",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
     "elementtree": "^0.1.7",
     "exceljs": "^4.4.0",
     "image-size": "^2.0.2",
