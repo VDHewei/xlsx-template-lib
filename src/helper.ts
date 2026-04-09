@@ -1754,29 +1754,33 @@ const compileRowCells = function (ctx: CompileContext, expr: RuleValue, cellPoin
         return;
     }
     ctx.currentExpr = expr;
-    cellPoints.forEach((cellPoint, index) => {
-        const r = cellPoint.Row;
-        const sheet = ctx.sheet;
-        const c = cellPoint.Column;
-        // 我们的解析逻辑中 X 已经转换为数字索引
-        const cell = sheet.findCell(r, c);
-        if (cell === undefined ||
-            (cell.value !== undefined && cell.value !== null && cell.value !== "")) {
-            return;
-        }
-        // 获取表达式模板
-        let templateValue = String(expr.value);
-        // 步骤 1: 解析宏指令
-        // 提取所有 compile: 开头的指令
-        const macroTokens = getMacroTokens(expr);
-        // 递归替换宏
-        templateValue = resolveFunctionExpr(ctx, templateValue, expr); // <?>
-        templateValue = resolveCompileMacroExpr(ctx, templateValue, macroTokens, index, cellPoints.length); // compile:Macro,compile:Gen
-        templateValue = resolveAliasExpr(ctx, templateValue, index); // @
-        // 写入单元格
-        cell.value = resolveValueExpr(ctx, templateValue);
-    })
-
+    try{
+        cellPoints.forEach((cellPoint, index) => {
+            const r = cellPoint.Row;
+            const sheet = ctx.sheet;
+            const c = cellPoint.Column;
+            // 我们的解析逻辑中 X 已经转换为数字索引
+            const cell = sheet.findCell(r, c);
+            if (cell === undefined ||
+                (cell.value !== undefined && cell.value !== null && cell.value !== "")) {
+                return;
+            }
+            // 获取表达式模板
+            let templateValue = String(expr.value);
+            // 步骤 1: 解析宏指令
+            // 提取所有 compile: 开头的指令
+            const macroTokens = getMacroTokens(expr);
+            // 递归替换宏
+            templateValue = resolveFunctionExpr(ctx, templateValue, expr); // <?>
+            templateValue = resolveCompileMacroExpr(ctx, templateValue, macroTokens, index, cellPoints.length); // compile:Macro,compile:Gen
+            templateValue = resolveAliasExpr(ctx, templateValue, index); // @
+            // 写入单元格
+            cell.value = resolveValueExpr(ctx, templateValue);
+        })
+    }catch (err){
+        const msg = (err as Error).message;
+        throw new Error(`expr:${expr.express}, resolve error: ${msg}`);
+    }
 }
 
 const generateWorkSheetCellsPlaceholder = function (ctx: CompileContext, expr: RuleValue, sheet: exceljs.Worksheet): Error[] | undefined {
