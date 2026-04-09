@@ -1276,7 +1276,7 @@ const __numberKey: MacroUnitHelper = (str: string): string => {
 const __codeAliasKey: MacroUnitHelper = (str: string): string => {
     const key = __codeKey(str);
     if (key !== "") {
-        return `${defaultRuleTokenParserMap.get(RuleToken.UseAliasToken)}${key}`;
+        return `${defaultRuleTokenMap.get(RuleToken.UseAliasToken)}${key}`;
     }
     return '';
 }
@@ -1382,8 +1382,8 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
                         if (cellValue === undefined || cellValue.value === null) {
                             return;
                         }
-                        const value = cellValue.value;
-                        parts.push(execMacroFormat(value.toString(), formatter));
+                        const value = execMacroFormat(cellValue.value.toString(), formatter);
+                        parts.push(value);
                     });
                 });
             }
