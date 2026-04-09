@@ -3,6 +3,10 @@ node_modules/
 dist/
 .idea/
 .vscode/
+bin/
 .env
 .docker/
 .npmrc
+*.exe
+*.out
+*.dmg
