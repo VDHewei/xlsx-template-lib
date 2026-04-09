@@ -1259,18 +1259,18 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
 }
 
 const __codeKey: MacroUnitHelper = (str: string): string => {
-    const replaces : string[]= [" ", `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
-    for(const k of replaces){
-        str = str.replaceAll(k,"_").trim();
-        if(str.indexOf("__") >=0) {
-            str = str.replaceAll( "__", "_")
+    const replaces: string[] = [" ", `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
+    for (const k of replaces) {
+        str = str.replaceAll(k, "_").trim();
+        if (str.indexOf("__") >= 0) {
+            str = str.replaceAll("__", "_")
         }
     }
-    if(str.startsWith("_")){
+    if (str.startsWith("_")) {
         str = str.substring(1)
     }
-    if(str.endsWith("_")){
-        str = str.substring(0,str.length-1)
+    if (str.endsWith("_")) {
+        str = str.substring(0, str.length - 1)
     }
     return str.toUpperCase();
 }
@@ -1317,6 +1317,30 @@ const toCellRow = (rowVals: number[], setup?: number): number[] => {
 
 const toCellColumn = (columnVals: number[], setup?: number): number[] => {
     return toCellRow(columnVals, setup);
+}
+
+const toCellValue = (value: exceljs.CellValue): string => {
+    if (typeof value !== "string") {
+        const rText = value as exceljs.CellRichTextValue;
+        if (rText !== undefined && rText.richText !== undefined && rText.richText.length > 0) {
+            const values: string[] = [];
+            for (const [_, v] of rText.richText.entries()) {
+                if (v === undefined || v === null) {
+                    continue;
+                }
+                const text = v.text !== undefined && v.text !== null ? v.text : undefined;
+                if (text !== undefined && text !== "" && text !== '[object]') {
+                    values.push(text.trim());
+                }
+            }
+            return values.join(" ");
+        }
+        const hText = value as exceljs.CellHyperlinkValue;
+        if (hText !== undefined && hText.text !== null && hText.hyperlink!==null) {
+            return `[${hText.text}](${hText.hyperlink})`;
+        }
+    }
+    return value.toString();
 }
 
 /**
@@ -1388,8 +1412,9 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
                         if (cellValue === undefined || cellValue.value === null) {
                             return;
                         }
-                        const value = execMacroFormat(cellValue.value.toString(), formatter);
-                        parts.push(value);
+                        const value = toCellValue(cellValue.value);
+                        let exprValue = execMacroFormat(value, formatter);
+                        parts.push(exprValue);
                     });
                 });
             }
@@ -1760,7 +1785,7 @@ const compileRowCells = function (ctx: CompileContext, expr: RuleValue, cellPoin
         return;
     }
     ctx.currentExpr = expr;
-    try{
+    try {
         cellPoints.forEach((cellPoint, index) => {
             const r = cellPoint.Row;
             const sheet = ctx.sheet;
@@ -1783,7 +1808,7 @@ const compileRowCells = function (ctx: CompileContext, expr: RuleValue, cellPoin
             // 写入单元格
             cell.value = resolveValueExpr(ctx, templateValue);
         })
-    }catch (err){
+    } catch (err) {
         const msg = (err as Error).message;
         throw new Error(`expr:${expr.express}, resolve error: ${msg}`);
     }
@@ -2036,6 +2061,7 @@ export {
     MacroArgs,
     ExtractMacroArgs,
     ExprResolver,
+    toCellValue,
     scanCellSetPlaceholder,
     workSheetSetPlaceholder,
     parseWorkSheetRules,
