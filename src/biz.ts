@@ -184,4 +184,5 @@ export {
     ZipXlsxTemplateApp,
     XlsxRender,
     CustomChecker,
+    CustomCheckerOptions,
 }
