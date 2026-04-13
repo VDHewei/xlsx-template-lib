@@ -1976,7 +1976,7 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
 const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<string, string> => {
     let sv: Map<RuleToken, RuleValue[]>;
     const alias = new Map<string, string>();
-    if (!(m instanceof Map) && m.rules !== undefined) {
+    if (m!==undefined && m!==null && !(m instanceof Map) && m?.rules !== undefined) {
         sv = m.rules;
     } else if (m instanceof Map) {
         if (m.size <= 0 || !m.has(RuleToken.AliasToken)) {
