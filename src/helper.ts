@@ -1229,7 +1229,7 @@ const getExprEnd = function (macroExpr: string, matchIndex: number, rparenToken:
 }
 
 const macroFormatters: string[] = [numberKey, codeKey, codeAliasKey];
-type MacroUnitHelper = (v: string) => string;
+type MacroUnitHelper = (v: string, expr?: RuleValue) => string;
 
 // compile:Macro(type, X_arr, Y_arr, formatter)
 const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroArgs {
@@ -1258,7 +1258,7 @@ const extractMacro = function (expr: string, options: ExtractMacroArgs): MacroAr
     return extracResult;
 }
 
-const __codeKey: MacroUnitHelper = (str: string): string => {
+const __codeKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
     const replaces: string[] = [" ", `-`, `/`, `,`, `'`, `&`, `.`, `(`, `)`, `{`, `}`, `@`, `\\`, `[`, `]`, `#`, `:`];
     for (const k of replaces) {
         str = str.replaceAll(k, "_").trim();
@@ -1275,13 +1275,16 @@ const __codeKey: MacroUnitHelper = (str: string): string => {
     return str.toUpperCase();
 }
 
-const __numberKey: MacroUnitHelper = (str: string): string => {
+const __numberKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
     return Number.parseInt(str, 10).toString()
 }
 
-const __codeAliasKey: MacroUnitHelper = (str: string): string => {
+const __codeAliasKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
     const key = __codeKey(str);
     if (key !== "") {
+        if (expr !== undefined && expr.tokens.length > 0) {
+            expr.tokens.push(RuleToken.UseAliasToken);
+        }
         return `${defaultRuleTokenMap.get(RuleToken.UseAliasToken)}${key}`;
     }
     return '';
@@ -1294,11 +1297,11 @@ const macroFormatter: Map<string, MacroUnitHelper> = new Map<string, MacroUnitHe
     [defaultKey, (v: string): string => v],
 ]);
 
-const execMacroFormat = function (value: string, formatter: string): string {
+const execMacroFormat = function (value: string, formatter: string,expr?:RuleValue): string {
     if (!macroFormatter.has(formatter)) {
         return value;
     }
-    return macroFormatter.get(formatter)(value)
+    return macroFormatter.get(formatter)(value,expr)
 }
 
 const toCellRow = (rowVals: number[], setup?: number): number[] => {
@@ -1336,7 +1339,7 @@ const toCellValue = (value: exceljs.CellValue): string => {
             return values.join(" ");
         }
         const hText = value as exceljs.CellHyperlinkValue;
-        if (hText !== undefined && hText.text !== null && hText.hyperlink!==null) {
+        if (hText !== undefined && hText.text !== null && hText.hyperlink !== null) {
             return `[${hText.text}](${hText.hyperlink})`;
         }
     }
@@ -1413,7 +1416,7 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
                             return;
                         }
                         const value = toCellValue(cellValue.value);
-                        let exprValue = execMacroFormat(value, formatter);
+                        let exprValue = execMacroFormat(value, formatter,ctx.currentExpr || undefined);
                         parts.push(exprValue);
                     });
                 });
@@ -1451,6 +1454,8 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
             exprValue = resolveCompileMacroGen(ctx, macroCurrent, currentCellIndex);
         }
         macroExpr = exprValue;
+    }else {
+        macroExpr = resolveAliasExpr(ctx, macroExpr, currentCellIndex);
     }
 
     return macroExpr;
@@ -1976,7 +1981,7 @@ const compileWorkSheet = async function <T extends ArrayBuffer | Buffer | string
 const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<string, string> => {
     let sv: Map<RuleToken, RuleValue[]>;
     const alias = new Map<string, string>();
-    if (m!==undefined && m!==null && !(m instanceof Map) && m?.rules !== undefined) {
+    if (m !== undefined && m !== null && !(m instanceof Map) && m?.rules !== undefined) {
         sv = m.rules;
     } else if (m instanceof Map) {
         if (m.size <= 0 || !m.has(RuleToken.AliasToken)) {
