@@ -8,9 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@types/adm-zip':
+        specifier: ^0.5.8
+        version: 0.5.8
       '@types/elementtree':
         specifier: ^0.1.5
         version: 0.1.5
+      '@types/lodash':
+        specifier: ^4.17.24
+        version: 4.17.24
+      adm-zip:
+        specifier: ^0.5.17
+        version: 0.5.17
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -26,28 +35,19 @@ importers:
       image-size:
         specifier: ^2.0.2
         version: 2.0.2
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
     devDependencies:
-      '@types/adm-zip':
-        specifier: ^0.5.8
-        version: 0.5.8
-      '@types/lodash':
-        specifier: ^4.17.24
-        version: 4.17.24
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
-      adm-zip:
-        specifier: ^0.5.17
-        version: 0.5.17
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
-      lodash:
-        specifier: ^4.18.1
-        version: 4.18.1
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.8)(typescript@6.0.2)

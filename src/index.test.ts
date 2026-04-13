@@ -1,22 +1,14 @@
 import * as fs from "node:fs/promises";
 import {BufferType, generateXlsxTemplate} from './core'
 import {assertType, describe, expect, expectTypeOf, it, Mock, vi} from 'vitest'
-import AdmZip from "adm-zip";
-import path from "node:path";
-import JsZip from "jszip";
-import {clone} from "lodash";
-
 import {
     AddCommand,
     Argument,
     compileRuleSheetName,
     CmdFunction,
-    AutoOptions,
     generateCommandsXlsxTemplate,
     generateCommandsXlsxTemplateWithCompile,
     getCommands,
-    commandExtendQuery,
-    autoRegisterAlias,
 } from './extends'
 import {
     compileWorkSheet,
@@ -27,12 +19,12 @@ import {
     PlaceholderCellValue, RuleMapOptions,
     RuleResult,
     RuleToken,
-    ExprResolver,
     scanCellSetPlaceholder
 } from './helper';
 
-import {FullOptions,SheetInfo,Workbook} from './core'
-
+import {
+    ZipXlsxTemplateApp,
+} from  './biz';
 
 async function createMockBuffer(options: {
     targetValue?: string | null;
@@ -300,153 +292,14 @@ describe('compileWorkSheet', {tags: ["compile"]}, () => {
 });
 
 
-
-const compileAll = async (buf: Buffer, compileOpts: AutoOptions, renderData?: Object): Promise<Buffer> => {
-    if (compileOpts === undefined || compileOpts.sheetName === "") {
-        return buf;
-    }
-    const result = await ExprResolver.compile(buf, compileOpts.sheetName, compileOpts);
-    if (result.errs !== undefined && result.errs.length > 0) {
-        throw result.errs[0];
-    }
-    if (compileOpts.remove !== undefined && compileOpts.remove === true) {
-        result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOpts);
-    }
-    if (renderData !== undefined) {
-        autoRegisterAlias(renderData, result.configure);
-    }
-    return await ExprResolver.toBuffer(result.workbook);
-}
-
-
- class XlsxRender extends Workbook {
-    constructor(option?: FullOptions) {
-        super(option);
-    }
-
-    static async create(data: Buffer, option?: FullOptions): Promise<XlsxRender> {
-        const w = await super.parse(data, option);
-        w.setQueryFunctionHandler(commandExtendQuery);
-        const app = new XlsxRender(option);
-        Object.assign(app, {...w})
-        return app;
-    }
-
-    public async render(values: Object, sheetName: string): Promise<void> {
-        await this.substitute(sheetName, values);
-    }
-
-    public getSheets(): SheetInfo[] {
-        return this.sheets;
-    }
-
-}
-
- class ZipXlsxTemplateApp {
-    zipBuffer?: Buffer;
-    private zip: AdmZip;
-    private xlsxEntries: Map<string, Buffer>;
-    private  records: Map<string, XlsxRender> = new Map<string, XlsxRender>();
-
-    constructor(data?: Buffer) {
-        this.zipBuffer = data;
-        if (data !== undefined) {
-            this.xlsxEntries = this.parse(data);
-        }
-    }
-
-    public loadZipBuffer(data: Buffer): ZipXlsxTemplateApp {
-        this.zipBuffer = data;
-        this.zip = new AdmZip(data);
-        this.xlsxEntries = this.parse(data);
-        return this;
-    }
-
-    public parse(data: Buffer): Map<string, Buffer> {
-        const zip = new AdmZip(data);
-        const result = new Map<string, Buffer>();
-        const entries = zip.getEntries();
-        for (let fd of entries) {
-            if (fd.isDirectory) {
-                continue
-            }
-            let ext = path.extname(fd.entryName).substring(1).toLowerCase();
-            if (ext !== "xlsx") {
-                continue
-            }
-            result.set(fd.entryName, fd.getData());
-        }
-        this.zip = zip;
-        return result;
-    }
-
-    public getEntries(): Map<string, Buffer> {
-        if (this.xlsxEntries !== undefined && this.xlsxEntries.size > 0) {
-            return this.xlsxEntries;
-        } else {
-            if (this.zipBuffer !== undefined) {
-                return this.parse(this.zipBuffer);
-            }
-        }
-        return new Map<string, Buffer>();
-    }
-
-    static async compileAll(files: Map<string, Buffer>, renderData?: Object, compileOpts?: AutoOptions): Promise<Map<string, Buffer>> {
-        const records = new Map<string, Buffer>();
-        if (compileOpts !== undefined && (compileOpts.sheetName === undefined ||
-            compileOpts.sheetName === "")) {
-            compileOpts.sheetName = compileRuleSheetName;
-        }
-        for (let [key, buf] of files.entries()) {
-            buf = await compileAll(buf,compileOpts,clone(renderData));
-            records.set(key, buf);
-        }
-        return records;
-    }
-
-    public async substituteAll(renderData: Object, compileOpts?: AutoOptions, renderOpts?: FullOptions): Promise<ZipXlsxTemplateApp> {
-        const files = await ZipXlsxTemplateApp.compileAll(this.xlsxEntries, renderData, compileOpts);
-        for (const [k, buf] of files.entries()) {
-            const xlsx = await XlsxRender.create(buf, renderOpts);
-            await xlsx.substituteAll(renderData);
-            this.records.set(k, xlsx);
-        }
-        return this;
-    }
-
-
-    public async generate(options?: JsZip.JSZipGeneratorOptions<BufferType.NodeBuffer> & FullOptions): Promise<Buffer> {
-        if (this.records === undefined || this.records.size <= 0) {
-            return this.zipBuffer;
-        }
-        if (this.zip === undefined) {
-            this.zip = new AdmZip();
-        }
-        for (const [key, xlsx] of this.records) {
-            const buf = await xlsx.generate(options);
-            let entry = this.zip.getEntry(key);
-            if (entry !== null) {
-                entry.setData(Buffer.from(buf));
-            } else {
-                this.zip.addFile(key, Buffer.from(buf));
-            }
-        }
-        return this.zip.toBuffer();
-    }
-
-}
-
 describe('compileZip',{tags: ["compile"]},  ()=> {
     it('zipCompile', async () => {
-       // const buffer = await createMockBuffer({merged: true, leftValues: [null, null, null]});
-       // const {placeholder, spyToString, spyMerge} = getPlaceholder();
-       // const res = await scanCellSetPlaceholder(buffer, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
-       // expectTypeOf<ArrayBuffer>(res);
-       // expect(res.byteLength).not.equal(0, "输出结果异常")
-       // if (testEnv(XlsxTest, "true")) {
-       //     await fs.writeFile(`./test_data/test_scanCell_3_${new Date().valueOf()}.xlsx`, res as any)
-       // }
-       // expect(spyToString).toHaveBeenCalledOnce();
-       // expect(spyMerge).not.toHaveBeenCalled();
+        const fd = await  fs.readFile(`./test_data/test_lrr.zip`);
+        const processedBuffer = await ZipXlsxTemplateApp.compileTo(Buffer.from(fd),{})
+        expectTypeOf<Buffer>(processedBuffer);
+        expect(processedBuffer.length).not.equal(0, "输出结果异常")
+        if (testEnv(XlsxTest, "true","ZIP_COMPILE")) {
+            await fs.writeFile(`./test_data/test_zip_3_${new Date().valueOf()}.zip`,processedBuffer)
+        }
     });
 })

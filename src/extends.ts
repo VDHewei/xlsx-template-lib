@@ -378,6 +378,23 @@ const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.
     return w.generate(options);
 }
 
+const compileAll = async (buf: Buffer, compileOpts: AutoOptions, renderData?: Object): Promise<Buffer> => {
+    if (compileOpts === undefined || compileOpts.sheetName === "") {
+        return buf;
+    }
+    const result = await ExprResolver.compile(buf, compileOpts.sheetName, compileOpts);
+    if (result.errs !== undefined && result.errs.length > 0) {
+        throw result.errs[0];
+    }
+    if (compileOpts.remove !== undefined && compileOpts.remove === true) {
+        result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOpts);
+    }
+    if (renderData !== undefined) {
+        autoRegisterAlias(renderData, result.configure);
+    }
+    return await ExprResolver.toBuffer(result.workbook);
+}
+
 export {
     mergeMap,
     autoRegisterAlias,
@@ -390,6 +407,7 @@ export {
     ArgumentData,
     AutoOptions,
     compileRuleSheetName,
+    compileAll,
     AddCommand,
     AddCommandMust,
     ArgumentValueLoader,
