@@ -114,7 +114,6 @@ class ZipXlsxTemplateApp {
         return this;
     }
 
-
     public async generate(options?: JsZip.JSZipGeneratorOptions<BufferType.NodeBuffer> & FullOptions): Promise<Buffer> {
         if (this.records === undefined || this.records.size <= 0) {
             return this.zipBuffer;
