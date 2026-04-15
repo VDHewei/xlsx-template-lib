@@ -30,17 +30,488 @@ npm install @vdhewei/xlsx-template-lib
 | `${exportData.LRR.mothOrYear}` | `2024-01` |
 | `${contract.contractTitle}` | `Construction Project A` |
 
+### 占位符类型
+
+#### 1. 简单值（标量）
+
+使用单个值替换占位符。
+
+**Excel 模板：**
+```
+A              B
+1 提取日期：${extractDate}
+```
+
+**代码：**
+```typescript
+const values = {
+    extractDate: new Date('2024-01-15')
+};
+template.substitute(1, values);
+```
+
+**结果：**
+```
+A              B
+1 提取日期：Jan-15-2024
+```
+
+**注意事项：**
+- 占位符可以单独在单元格中，也可以作为文本的一部分："总计：${amount}"
+- Excel 单元格格式（日期、数字、货币）会被保留
+
+#### 2. 数组索引
+
+直接在模板中访问特定数组元素。
+
+**Excel 模板：**
+```
+A            B
+1 第一个日期：${dates[0]}
+2 第二个日期：${dates[1]}
+```
+
+**代码：**
+```typescript
+const values = {
+    dates: [new Date('2024-01-01'), new Date('2024-02-01')]
+};
+template.substitute(1, values);
+```
+
+**结果：**
+```
+A            B
+1 第一个日期：Jan-01-2024
+2 第二个日期：Feb-01-2024
+```
+
+#### 3. 列数组
+
+在列中水平展开数组。
+
+**Excel 模板：**
+```
+A
+1 ${dates}
+```
+
+**代码：**
+```typescript
+const values = {
+    dates: [
+        new Date('2024-01-01'),
+        new Date('2024-02-01'),
+        new Date('2024-03-01')
+    ]
+};
+template.substitute(1, values);
+```
+
+**结果：**
+```
+A            B            C
+1 Jan-01-2024 Feb-01-2024 Mar-01-2024
+```
+
+**注意：** 占位符必须是单元格中的唯一内容
+
+#### 4. 表格行
+
+从对象数组生成多行。
+
+**Excel 模板：**
+```
+A               B    C
+1 姓名           年龄  部门
+2 ${team.name}   ${team.age}  ${team.dept}
+```
+
+**代码：**
+```typescript
+const values = {
+    team: [
+        { name: 'Alice Johnson', age: 28, dept: 'Engineering' },
+        { name: 'Bob Smith', age: 34, dept: 'Marketing' },
+        { name: 'Carol White', age: 25, dept: 'Sales' }
+    ]
+};
+template.substitute(1, values);
+```
+
+**结果：**
+```
+A               B    C
+1 姓名           年龄  部门
+2 Alice Johnson  28   Engineering
+3 Bob Smith      34   Marketing
+4 Carol White    25   Sales
+```
+
+**语法：** `${table:数组名.属性名}`
+- 数组中的每个对象创建一个新行
+- 如果属性是数组，则水平展开
+
+#### 5. 图片
+
+在单元格中插入图片。
+
+**Excel 模板：**
+```
+A          B
+1 Logo：${image:companyLogo}
+```
+
+**代码：**
+```typescript
+const values = {
+    companyLogo: '/path/to/logo.png'  // 或 Base64, Buffer
+};
+template.substitute(1, values);
+```
+
+**结果：**
+```
+A          B
+1 Logo：🖼️
+```
+
+**支持的图片格式：**
+- 文件路径（绝对或相对）：'/path/to/image.png'
+- Base64 字符串：'data:image/png;base64,iVBORw0KG...'
+- Buffer：fs.readFileSync('image.png')
+
+**图片选项：**
+```typescript
+const template = new XlsxTemplate(data, {
+    imageRootPath: '/absolute/path/to/images',  // 相对图片路径的基础路径
+    imageRatio: 75                               // 图片缩放比例为 75%
+});
+```
+
+**表格图片：**
+```
+A               B
+1 产品          照片
+2 ${products.name} ${products.photo:image}
+```
+
+**代码：**
+```typescript
+const values = {
+    products: [
+        { name: 'Product 1', photo: 'product1.jpg' },
+        { name: 'Product 2', photo: 'product2.jpg' }
+    ]
+};
+```
+
+**结果：**
+```
+A               B
+1 产品          照片
+2 Product 1      🖼️
+3 Product 2      🖼️
+```
+
+| 模板（编译前） | 渲染后结果 |
+|:-------------|:-----------|
+| `${contract.contractCode}` | `CTR-2024-001` |
+| `${exportData.LRR.mothOrYear}` | `2024-01` |
+| `${contract.contractTitle}` | `Construction Project A` |
+
 ### 编译规则配置
 
 在规则工作表（如 `export.metadata.config`）中配置渲染规则，支持以下语法：
 
+**⚠️ 重要规则：**
+- **同一个工作表中的相同规则不能重复配置，重复配置无效或会导致编译解析异常**
+- 每种规则类型在同一个工作表中必须唯一
+
 | 规则类型 | 语法 | 说明 |
 |:---------|:-----|:-----|
 | **alias** | `alias: @#key => use aliasKey: @# => @#` | 字段别名映射 |
-| **mergeCell** | `G-AQ(1-17)=sum(#LT[compile Macro]#err@F113.17[#codeKey],[compile Macro]#index@0)` | 合并单元格计算 |
-| **mergeCell（续）** | `G-AQ(18-35)=sum(#LT[compile Macro]#err@F118.20[#codeKey],[compile Macro]#index@0)` | 连续合并单元格 |
-| **cell** | `D-7=@#[@D.MY]` | 单元格值赋值 |
-| **rowCell** | `G-AQ117=compile GenCell(#LT[compile Macro]#err@F118[#codeKey],[compile Macro]#index@0)` | 行单元格生成 |
+| **rowCell** | `G-AP:12=compile GenCell(...)` | 行规则配置 |
+| **mergeCell** | `G-AQ:13-17=sum(...)` | 合并单元格计算 |
+| **cell** | `D-7=@#[@D.MY]` | 单个单元格值赋值 |
+
+#### Alias 规则
+
+为变量名或变量取值表达式定义别名缩写。支持多行配置。
+
+**语法：** `alias 缩写=原变量/原表达式`
+
+**规则：**
+- 别名缩写在同一工作表中必须唯一
+- 别名可在表达式中使用 `@别名` 引用
+
+**示例：**
+
+| 别名配置 | 说明 |
+|:---------|:-----|
+| `T=template` | 将 `T` 映射到 `template` |
+| `LLR=exportData.LRR` | 将 `LLR` 映射到 `exportData.LRR` |
+
+**在表达式中使用：**
+
+```
+使用前: ${exportData.LRR.value}
+使用后:  ${@LLR.value}
+```
+
+#### RowCell 规则
+
+配置行规则，为单元格范围赋值。支持多行配置。
+
+**语法：** `列起始号-列结束号:行号=值表达式`
+
+**范围格式：**
+- `列起始号-列结束号:行号`
+- 示例：`G-AP:12`（G 到 AP 列，第 12 行）
+
+**值表达式：**
+- 通常使用 `compile:GenCell` 宏替换或 `compile:Macro` 展开
+
+**示例：**
+
+| 规则 | 说明 |
+|:-----|:-----|
+| `G-AP:12=compile GenCell(@#item,[compile Macro]#index@0)` | 为第 12 行的 G-AP 列赋值生成的值 |
+| `A-Z:5=compile Macro(@#data,2,5,!!codeKey)` | 为第 5 行的 A-Z 列赋值格式化后的单元格值 |
+
+#### MergeCell 规则
+
+合并单元格并应用计算函数。支持多行配置。
+
+**语法：** `列起始号-列结束号:行起始号-行结束号=函数表达式`
+
+**范围格式：**
+- `列起始号-列结束号:行起始号-行结束号`
+- 示例：`G-AQ:13-17`（G 到 AQ 列，第 13 到 17 行）
+
+**函数表达式：**
+- 通常使用 `sum` 或 `sub` 函数配合宏替换
+
+**示例：**
+
+| 规则 | 说明 |
+|:-----|:-----|
+| `G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)` | 合并并计算第 13-17 行的和 |
+| `G-AQ:18-35=sub(@LT,[compile:Macro(exprArr,F,18,35,!!codeKey)],compile:Macro(index),0)` | 合并并计算第 18-35 行的差 |
+
+#### Cell 规则
+
+为单个单元格赋值。
+
+**语法：** `列号:行号=值表达式`
+
+**坐标格式：**
+- `列号:行号`
+- 示例：`D:7`（D 列，第 7 行）
+
+**值表达式：**
+- `compile:Macro` 展开
+- 变量占位符：`${变量}`
+- 带别名的变量占位符：`${@别名}`
+
+**示例：**
+
+| 规则 | 说明 |
+|:-----|:-----|
+| `D:7=@#[@D.MY]` | 从表达式赋值 |
+| `A:1=${contractCode}` | 从变量占位符赋值 |
+| `B:1=${@LLR.value}` | 从带别名的变量赋值 |
+
+#### 计算函数
+
+**sum 函数**
+
+计算多个值的和。
+
+**语法：** `sum(值根,[值子项...],值后缀,默认值)`
+
+**参数：**
+- `值根`: 所有值表达式的共同父级
+- `值子项`: 各级值子项数组
+- `值后缀`: 每个值的结尾值
+- `默认值`: 当统计值之和为 0 时返回的值（undefined 不会返回默认值）
+
+**示例：**
+```
+sum(orders,[cat,food,game],1,0)
+// 相当于: orders.cat.1 + orders.food.1 + orders.game.1
+```
+
+**sub 函数**
+
+计算多个值的差。
+
+**语法：** `sub(值根,[值子项...],值后缀,默认值)`
+
+**参数：**
+- `值根`: 所有值表达式的共同父级
+- `值子项`: 各级值子项数组
+- `值后缀`: 每个值的结尾值
+- `默认值`: 当统计值之差为 0 时返回的值（undefined 不会返回默认值）
+
+**示例：**
+```
+sub(orders,[money,food,game],1,0)
+// 相当于: orders.money.1 - orders.food.1 - orders.game.1
+```
+
+### 宏替换规则
+
+本库支持强大的宏替换函数，用于动态生成单元格内容：
+
+#### GenCell 宏
+
+通过连接多个部分生成单元格表达式：
+
+| 语法 | 说明 | 示例 | 结果 |
+|:-----|:-----|:-----|:-----|
+| `compile:GenCell(expr1,expr2,...,exprN)` | 使用默认分隔符 `·` 连接 | `GenCell(test,1,2)` | `test·1·2` |
+| `compile:GenCell(expr1,expr2,...,exprN,"sep")` | 使用自定义分隔符连接 | `GenCell(test,1,2,"_")` | `test_1_2` |
+| `compile:GenCell(expr1,expr2,...,exprN,"")` | 不使用分隔符连接 | `GenCell(test,1,2,"")` | `test12` |
+
+#### Macro 宏展开
+
+##### 单个单元格宏
+
+展开为单个单元格的值：
+
+| 语法 | 说明 | 示例 |
+|:-----|:-----|:-----|
+| `compile:Macro(expr,columnNum,rowNum)` | 获取 (columnNum, rowNum) 位置单元格的值 | `Macro(data,2,5)` |
+| `compile:Macro(expr,columnNum,rowNum,MacroFormatter)` | 获取格式化后的值 | `Macro(data,2,5,!!codeKey)` |
+
+**参数说明：**
+- `expr`: 基础表达式
+- `columnNum`: 列号（从 1 开始）
+- `rowNum`: 行号（从 1 开始）
+- `MacroFormatter`: 可选的格式化器（见下方）
+
+##### 多个单元格宏
+
+展开为多个单元格的值：
+
+| 语法 | 说明 | 示例 |
+|:-----|:-----|:-----|
+| `compile:Macro(exprArr,columnNum,rowStartNum,rowEndNum)` | 获取单元格范围内的值 | `Macro(data,1,1,5)` |
+| `compile:Macro(exprArr,columnNum,rowStartNum,rowEndNum,MacroFormatter)` | 获取格式化后的值 | `Macro(data,1,1,5,!!number)` |
+
+**参数说明：**
+- `exprArr`: 基础表达式数组
+- `columnNum`: 列号（从 1 开始）
+- `rowStartNum`: 起始行号（从 1 开始）
+- `rowEndNum`: 结束行号（从 1 开始）
+- `MacroFormatter`: 可选的格式化器
+
+##### Index 宏
+
+生成从 1 开始的迭代序列：
+
+| 语法 | 说明 | 使用示例 | 结果 |
+|:-----|:-----|:---------|:-----|
+| `compile:Macro(index)` | 自动递增索引（从 1 开始） | 第 1 行: `Macro(index)` | `1` |
+| | | 第 2 行: `Macro(index)` | `2` |
+| | | 第 3 行: `Macro(index)` | `3` |
+
+#### Macro 格式化器
+
+使用以 `!!` 开头的特殊格式化器格式化宏输出：
+
+| 格式化器 | 说明 | 输入 | 输出 |
+|:---------|:-----|:-----|:-----|
+| `!!codeKey` | 将特殊字符（`@-[]{}\/'.`）转换为 `_`，删除多余 `__`，去除首尾 `_`，转为大写 | `test..x` | `TEST_X` |
+| | | `@data-value` | `DATA_VALUE` |
+| | | `[item].name` | `ITEM_NAME` |
+| `!!codeKeyAlias` | 与 `!!codeKey` 相同，但添加前缀（默认 `@`） | `test..x` | `@TEST_X` |
+| | （默认前缀 `@`）| `data.value` | `@DATA_VALUE` |
+| `!!number` | 转换为十进制整数，支持 `0x` 十六进制前缀 | `123` | `123` |
+| | | `0xFF` | `255` |
+| | | `abc` | `abc`（保持不变，NaN） |
+
+**CodeKey 转换规则：**
+- 替换的特殊字符：`@`, `-`, 空格, `[`, `]`, `{`, `}`, `\`, `/`, `'`, `.`
+- 连续的多个 `__` 合并为单个 `_`
+- 删除开头和结尾的 `_`
+- 最终结果转为大写
+
+#### Macro 使用示例
+
+**示例 1: 使用行单元格生成 CodeKey**
+
+```
+规则: G-AQ:117=compile GenCell(#LT[compile Macro]#err@F118[#codeKey],[compile Macro]#index@0)
+结果: errValue·1, errValue·2, errValue·3, ...
+```
+
+**示例 2: 使用 CodeKey 格式化单元格值**
+
+```
+规则: D-7=compile Macro(@#[@D.MY],5,7,!!codeKey)
+如果 cell(5,7) = "project-alpha-2024"
+结果: PROJECT_ALPHA_2024
+```
+
+**示例 3: 生成 CodeKeyAlias**
+
+```
+规则: cell F-10=compile Macro(@#key,3,10,!!codeKeyAlias)
+如果 cell(3,10) = "test..data"
+结果: @TEST_DATA
+```
+
+**示例 4: 数字转换**
+
+```
+规则: row-5=compile Macro(@#value,2,5,!!number)
+如果 cell(2,5) = "42"
+结果: 42
+
+规则: row-6=compile Macro(@#hex,4,6,!!number)
+如果 cell(4,6) = "0x1A"
+结果: 26
+```
+
+**示例 5: 使用 Index 迭代**
+
+```
+第 1 行: Code-${compile:Macro(index)}  →  Code-1
+第 2 行: Code-${compile:Macro(index)}  →  Code-2
+第 3 行: Code-${compile:Macro(index)}  →  Code-3
+```
+
+#### 完整规则配置示例
+
+规则工作表（`export.metadata.config`）的完整示例，包含所有规则类型：
+
+```
+# Alias 规则（为长表达式定义快捷方式）
+T=template
+LLR=exportData.LRR
+CTR=contract.contractCode
+
+# RowCell 规则（为单元格范围赋值）
+G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+A-Z:5=compile Macro(@#data,2,5,!!codeKey)
+
+# MergeCell 规则（合并单元格并应用计算）
+G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+G-AQ:18-35=sub(@LT,[compile:Macro(exprArr,F,18,35,!!codeKey)],compile:Macro(index),0)
+
+# Cell 规则（为单个单元格赋值）
+D:7=@#[@D.MY]
+A:1=${@CTR}
+B:1=${@LLR.value}
+```
+
+**⚠️ 重要注意事项：**
+- 每种规则类型（alias、rowCell、mergeCell、cell）可以出现多次
+- 但**相同规则的重复配置无效或会导致编译解析异常**
+- 别名缩写在同一工作表中必须唯一
+- 行/列范围不能以冲突的方式重叠
 
 ### 渲染函数
 
@@ -306,3 +777,19 @@ https://github.com/VDHewei/xlsx-template-lib
 ## 贡献
 
 欢迎贡献！请随时提交 Pull Request。
+
+## 致谢
+
+本项目受到了优秀的开源项目 [xlsx-template](https://github.com/optilude/xlsx-template)（由 optilude 开发）的启发。
+
+**xlsx-template** 为基于模板的 Excel 报表生成和动态数据替换提供了坚实的基础。本库的许多概念和设计模式都受到了 xlsx-template 的影响，包括：
+
+- 基于模板的 Excel 文件生成
+- 占位符替换语法
+- 数组和表格展开
+- 图片插入和定位
+- 单元格格式保留
+
+我们向 xlsx-template 团队和贡献者致以诚挚的感谢，感谢他们在开源社区中的宝贵工作。
+
+**原 xlsx-template 仓库：** https://github.com/optilude/xlsx-template

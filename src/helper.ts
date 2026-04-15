@@ -2022,7 +2022,7 @@ const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<string, st
 }
 
 const removeUnExportSheets = (w: exceljs.Workbook, options: RuleOptions): exceljs.Workbook => {
-    const removes: string[] = [];
+    let removes: string[] = [];
     if (typeof options.skipRemoveUnExportSheet === "boolean" && options.skipRemoveUnExportSheet === true) {
         return w;
     }
@@ -2040,6 +2040,9 @@ const removeUnExportSheets = (w: exceljs.Workbook, options: RuleOptions): excelj
                 removes.push(v.name);
             }
         }
+    }
+    if(removes.length === w.worksheets.length && w.worksheets[0].name === removes[0]){
+        removes = removes.slice(1,removes.length);
     }
     for (const [_, name] of removes.entries()) {
         w.removeWorksheet(name)
