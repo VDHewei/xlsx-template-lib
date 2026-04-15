@@ -1221,6 +1221,14 @@ const resolveCompileMacroGen = (ctx: CompileContext, expr: string, currentCellIn
             parts.push(resolveAliasExpr(ctx, item.value, currentCellIndex));
         }
     }
+    if (parts.length === 1) {
+        return parts[0];
+    }
+    let end = parts[parts.length - 1];
+    if (end.startsWith('"') && end.length >= 3 && end.endsWith('"')) {
+        join = end;
+        return parts.slice(0, parts.length - 1).join(join);
+    }
     return parts.join(join);
 }
 
@@ -1276,7 +1284,20 @@ const __codeKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
 }
 
 const __numberKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
-    return Number.parseInt(str, 10).toString()
+    if(str === "NaN" ||
+        str === "Infinity" ||
+        str === "null" ||
+        str === "[object object]"){
+        return str
+    }
+    if (str.startsWith("0x")) {
+        return str.substring(2)
+    }
+    let v = Number.parseInt(str, 10);
+    if (isNaN(v)) {
+        return str;
+    }
+    return v.toString()
 }
 
 const __codeAliasKey: MacroUnitHelper = (str: string, expr?: RuleValue): string => {
@@ -1297,11 +1318,11 @@ const macroFormatter: Map<string, MacroUnitHelper> = new Map<string, MacroUnitHe
     [defaultKey, (v: string): string => v],
 ]);
 
-const execMacroFormat = function (value: string, formatter: string,expr?:RuleValue): string {
+const execMacroFormat = function (value: string, formatter: string, expr?: RuleValue): string {
     if (!macroFormatter.has(formatter)) {
         return value;
     }
-    return macroFormatter.get(formatter)(value,expr)
+    return macroFormatter.get(formatter)(value, expr)
 }
 
 const toCellRow = (rowVals: number[], setup?: number): number[] => {
@@ -1416,7 +1437,7 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
                             return;
                         }
                         const value = toCellValue(cellValue.value);
-                        let exprValue = execMacroFormat(value, formatter,ctx.currentExpr || undefined);
+                        let exprValue = execMacroFormat(value, formatter, ctx.currentExpr || undefined);
                         parts.push(exprValue);
                     });
                 });
@@ -1454,7 +1475,7 @@ const resolveCompileMacroExpr = (ctx: CompileContext, macroExpr: string, macroTo
             exprValue = resolveCompileMacroGen(ctx, macroCurrent, currentCellIndex);
         }
         macroExpr = exprValue;
-    }else {
+    } else {
         macroExpr = resolveAliasExpr(ctx, macroExpr, currentCellIndex);
     }
 
