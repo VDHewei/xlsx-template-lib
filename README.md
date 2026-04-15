@@ -606,13 +606,233 @@ const result = await ZipXlsxTemplateApp.compileTo(zipBuffer, {
 
 ### CLI Tool
 
-```bash
-# Compile template
-xlsx-cli compile template.xlsx -s compiled.xlsx -r
+The CLI tool `xlsx-cli` provides command-line interface for quick Excel template processing.
 
-# Render template
-xlsx-cli render template.xlsx -s output.xlsx -c
+#### Installation
+
+```bash
+npm install -g @vdhewei/xlsx-template-lib
 ```
+
+Or use directly from `npx`:
+
+```bash
+npx @vdhewei/xlsx-template-lib <command> [options]
+```
+
+#### Commands
+
+##### 1. Compile Command
+
+Compile Excel files with rule configurations.
+
+```bash
+xlsx-cli compile <xlsx-file> [options]
+```
+
+**Arguments:**
+- `<xlsx-file>` - Path to the Excel file
+
+**Options:**
+- `-s, --save <string>` - Save compiled file to specified directory (default: current directory)
+- `-n, --sheet-name <string>` - Sheet name to compile (default: first sheet)
+- `-r, --remove` - Remove configure rules sheet after compilation (default: false)
+
+**Examples:**
+
+```bash
+# Basic compile with default settings
+xlsx-cli compile template.xlsx
+
+# Compile and save to specific location
+xlsx-cli compile template.xlsx -s ./output/
+
+# Compile specific sheet
+xlsx-cli compile template.xlsx -n Sheet1
+
+# Compile and remove config sheet
+xlsx-cli compile template.xlsx -r
+
+# Full example
+xlsx-cli compile template.xlsx -s ./output/ -n Sheet1 -r
+```
+
+**Output:**
+- Compiled Excel file saved as `<filename>_<timestamp>.xlsx`
+- Success messages displayed in green
+- Errors displayed in red with process exit code 1
+
+##### 2. Render Command
+
+Render Excel templates with data substitution.
+
+```bash
+xlsx-cli render <xlsx-file> [options]
+```
+
+**Arguments:**
+- `<xlsx-file>` - Path to the Excel template file
+
+**Options:**
+- `-c, --compile` - Auto-compile rules before rendering (default: false)
+- `-n, --sheet-name <string>` - Sheet name to render (default: first sheet)
+- `-s, --save <string>` - Save rendered file to specified directory (default: current directory)
+- `-d, --data <string>` - Render data source (JSON string, file path, or URL)
+
+**Examples:**
+
+```bash
+# Basic render with empty data
+xlsx-cli render template.xlsx
+
+# Render with JSON data string
+xlsx-cli render template.xlsx -d '{"name":"John","age":30}'
+
+# Render with JSON file
+xlsx-cli render template.xlsx -d ./data.json
+
+# Render with remote JSON URL
+xlsx-cli render template.xlsx -d 'https://api.example.com/data.json'
+
+# Render with auto-compile
+xlsx-cli render template.xlsx -c -d './data.json'
+
+# Render specific sheet
+xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
+
+# Full example
+xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
+```
+
+**Data Sources:**
+- **JSON String**: Direct JSON string enclosed in single quotes
+- **Local File**: Path to `.json` file (relative or absolute)
+- **Remote URL**: HTTP/HTTPS URL returning JSON
+
+**Output:**
+- Rendered Excel file saved as `<filename>_<timestamp>.xlsx`
+- Validation checks for sheet existence
+- Success/error messages with appropriate colors
+
+##### 3. Rules Command
+
+Add rule configurations to Excel files.
+
+```bash
+xlsx-cli rules <xlsx-file> [options]
+```
+
+**Arguments:**
+- `<xlsx-file>` - Path to the Excel file
+
+**Options:**
+
+**Mode 1: Command Line Rules**
+- `-t, --type <string>` - Rule type: `cell`, `alias`, `rowCell`, `mergeCell` (required when using -r)
+- `-r, --rule <string>` - Rule expression string (can be specified multiple times)
+
+**Mode 2: File Rules**
+- `-f, --file <string>` - Read rules from file (format: `<type> ruleExpr` per line)
+  - Lines starting with `#` are treated as comments
+  - Empty lines are skipped
+  - Rule types: `cell`, `alias`, `rowCell`, `mergeCell`
+
+**Common Options:**
+- `-s, --save <string>` - Save compiled file to specified directory (default: current directory)
+
+**Examples:**
+
+**Single Rule (Command Line):**
+```bash
+# Add alias rule
+xlsx-cli rules template.xlsx -t alias -r 'T=template'
+
+# Add cell rule
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
+
+# Add rowCell rule
+xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)'
+
+# Add mergeCell rule
+xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
+```
+
+**Multiple Rules (Command Line):**
+```bash
+# Add multiple rules with same type
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
+```
+
+**Rules from File:**
+```bash
+# Read rules from file
+xlsx-cli rules template.xlsx -f rules.txt
+
+# Create rules.txt file:
+# This is a comment
+alias T=template
+alias LLR=exportData.LRR
+cell D:7=${@T}
+cell A:1=${@LLR.value}
+rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+```
+
+**Save to Specific Directory:**
+```bash
+xlsx-cli rules template.xlsx -f rules.txt -s ./output/
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
+```
+
+**File Format (-f mode):**
+```bash
+# Format: <type> ruleExpr
+# Comments start with #
+# Valid types: cell, alias, rowCell, mergeCell
+
+cell D:7=${@LLR.value}
+alias T=template
+rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+```
+
+**Behavior:**
+- Creates `export_metadata.config` sheet if not exists
+- Adds rule with proper styling: bold + center alignment for type, center alignment for expression
+- Auto-adjusts column widths based on content
+- Each rule type (cell, alias, rowCell, mergeCell) supports up to 4 rules per row
+- If more than 4 rules are added for same type, automatically creates a new row
+- Outputs new file with timestamp
+
+#### Common Features
+
+**Environment Variables:**
+- CLI automatically loads `.env` file from current directory if present
+
+**File Path Resolution:**
+- Supports absolute and relative paths
+- Resolves paths relative to current working directory
+- Validates file existence before processing
+
+**Error Handling:**
+- All errors displayed in red using chalk
+- Non-zero exit code on errors
+- Detailed error messages for debugging
+
+**Cross-Platform Support:**
+- Works on Windows, Linux, and macOS
+- Uses platform-independent path handling
+
+**Output Filename Format:**
+- Default: `<input-filename>_<timestamp>.xlsx`
+- Timestamp in milliseconds since epoch
+- Preserves original file name
+
+**Verbose Logging:**
+- Gray informational messages for process steps
+- Green success messages
+- Red error messages
+- Yellow warnings
 
 ## Advanced Features
 

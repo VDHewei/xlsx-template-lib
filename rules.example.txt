@@ -1,0 +1,23 @@
+# Example rules file for xlsx-cli rules command
+# Format: <type> ruleExpr
+# Lines starting with # are comments
+# Empty lines are skipped
+
+# Alias rules - define shortcuts for long expressions
+alias T=template
+alias LLR=exportData.LRR
+alias CTR=contract.contractCode
+
+# Cell rules - assign values to single cells
+cell D:7=${@T}
+cell A:1=${@CTR}
+cell B:1=${@LLR.value}
+cell C:1=${@LLR.mothOrYear}
+
+# RowCell rules - assign values to cell ranges
+rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+rowCell A-Z:5=compile Macro(@#data,2,5,!!codeKey)
+
+# MergeCell rules - merge cells and apply calculations
+mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+mergeCell G-AQ:18-35=sub(@LT,[compile:Macro(exprArr,F,18,35,!!codeKey)],compile:Macro(index),0)

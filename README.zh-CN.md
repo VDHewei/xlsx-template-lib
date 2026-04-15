@@ -604,13 +604,234 @@ const result = await ZipXlsxTemplateApp.compileTo(zipBuffer, {
 
 ### CLI 工具
 
-```bash
-# 编译模板
-xlsx-cli compile template.xlsx -s compiled.xlsx -r
+CLI 工具 `xlsx-cli` 提供了命令行接口用于快速处理 Excel 模板。
 
-# 渲染模板
-xlsx-cli render template.xlsx -s output.xlsx -c
+#### 安装
+
+```bash
+npm install -g @vdhewei/xlsx-template-lib
 ```
+
+或直接使用 `npx`:
+
+```bash
+npx @vdhewei/xlsx-template-lib <命令> [选项]
+```
+
+#### 命令
+
+##### 1. compile 命令
+
+编译带有规则配置的 Excel 文件。
+
+```bash
+xlsx-cli compile <xlsx-文件> [选项]
+```
+
+**参数:**
+- `<xlsx-文件>` - Excel 文件路径
+
+**选项:**
+- `-s, --save <string>` - 将编译后的文件保存到指定目录（默认：当前目录）
+- `-n, --sheet-name <string>` - 要编译的工作表名称（默认：第一个工作表）
+- `-r, --remove` - 编译后移除配置规则工作表（默认：false）
+
+**示例:**
+
+```bash
+# 使用默认设置编译
+xlsx-cli compile template.xlsx
+
+# 编译并保存到指定位置
+xlsx-cli compile template.xlsx -s ./output/
+
+# 编译指定工作表
+xlsx-cli compile template.xlsx -n Sheet1
+
+# 编译并移除配置工作表
+xlsx-cli compile template.xlsx -r
+
+# 完整示例
+xlsx-cli compile template.xlsx -s ./output/ -n Sheet1 -r
+```
+
+**输出:**
+- 编译后的 Excel 文件保存为 `<文件名>_<时间戳>.xlsx`
+- 成功消息以绿色显示
+- 错误以红色显示并返回退出码 1
+
+##### 2. render 命令
+
+使用数据替换渲染 Excel 模板。
+
+```bash
+xlsx-cli render <xlsx-文件> [选项]
+```
+
+**参数:**
+- `<xlsx-文件>` - Excel 模板文件路径
+
+**选项:**
+- `-c, --compile` - 渲染前自动编译规则（默认：false）
+- `-n, --sheet-name <string>` - 要渲染的工作表名称（默认：第一个工作表）
+- `-s, --save <string>` - 将渲染后的文件保存到指定目录（默认：当前目录）
+- `-d, --data <string>` - 渲染数据源（JSON 字符串、文件路径或 URL）
+
+**示例:**
+
+```bash
+# 使用空数据基本渲染
+xlsx-cli render template.xlsx
+
+# 使用 JSON 字符串渲染
+xlsx-cli render template.xlsx -d '{"name":"张三","age":30}'
+
+# 使用 JSON 文件渲染
+xlsx-cli render template.xlsx -d ./data.json
+
+# 使用远程 JSON URL 渲染
+xlsx-cli render template.xlsx -d 'https://api.example.com/data.json'
+
+# 渲染并自动编译
+xlsx-cli render template.xlsx -c -d './data.json'
+
+# 渲染指定工作表
+xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
+
+# 完整示例
+xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
+```
+
+**数据源:**
+- **JSON 字符串**: 直接使用单引号括起来的 JSON 字符串
+- **本地文件**: `.json` 文件的路径（相对或绝对）
+- **远程 URL**: 返回 JSON 的 HTTP/HTTPS URL
+
+**输出:**
+- 渲染后的 Excel 文件保存为 `<文件名>_<时间戳>.xlsx`
+- 检查工作表是否存在
+- 使用适当的颜色显示成功/错误消息
+
+##### 3. rules 命令
+
+向 Excel 文件添加规则配置。
+
+```bash
+xlsx-cli rules <xlsx-文件> [选项]
+```
+
+**参数:**
+- `<xlsx-文件>` - Excel 文件路径
+
+**选项:**
+
+**模式 1：命令行规则**
+- `-t, --type <string>` - 规则类型：`cell`、`alias`、`rowCell`、`mergeCell`（使用 -r 时必需）
+- `-r, --rule <string>` - 规则表达式字符串（可指定多次）
+
+**模式 2：文件规则**
+- `-f, --file <string>` - 从文件读取规则（格式：每行 `<类型> 规则表达式`）
+  - 以 `#` 开头的行被视为注释
+  - 空行将被跳过
+  - 规则类型：`cell`、`alias`、`rowCell`、`mergeCell`
+
+**通用选项:**
+- `-s, --save <string>` - 保存编译后的文件到指定目录（默认：当前目录）
+
+**示例:**
+
+**单个规则（命令行）：**
+```bash
+# 添加 alias 规则
+xlsx-cli rules template.xlsx -t alias -r 'T=template'
+
+# 添加 cell 规则
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
+
+# 添加 rowCell 规则
+xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)'
+
+# 添加 mergeCell 规则
+xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
+```
+
+**多个规则（命令行）：**
+```bash
+# 添加同类型的多个规则
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
+```
+
+**从文件读取规则：**
+```bash
+# 从文件读取规则
+xlsx-cli rules template.xlsx -f rules.txt
+
+# 创建 rules.txt 文件：
+# 这是注释行
+alias T=template
+alias LLR=exportData.LRR
+cell D:7=${@T}
+cell A:1=${@LLR.value}
+rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+```
+
+**保存到指定目录：**
+```bash
+xlsx-cli rules template.xlsx -f rules.txt -s ./output/
+xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
+```
+
+**文件格式（-f 模式）：**
+```bash
+# 格式：<类型> 规则表达式
+# 注释行以 # 开头
+# 有效类型：cell、alias、rowCell、mergeCell
+
+cell D:7=${@LLR.value}
+alias T=template
+rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
+```
+
+**行为:**
+- 如果不存在则创建 `export_metadata.config` 工作表
+- 添加规则并应用样式：类型字段加粗+居中，表达式居中
+- 根据内容自动调整列宽
+- 每种规则类型（cell、alias、rowCell、mergeCell）每行支持最多 4 个规则
+- 如果为同一类型添加超过 4 个规则，自动创建新行
+- 支持从命令行或文件批量添加规则
+- 输出带时间戳的新文件
+
+#### 通用特性
+
+**环境变量:**
+- CLI 自动从当前目录加载 `.env` 文件（如果存在）
+
+**文件路径解析:**
+- 支持绝对和相对路径
+- 解析相对于当前工作目录的路径
+- 处理前验证文件是否存在
+
+**错误处理:**
+- 所有错误使用 chalk 以红色显示
+- 出错时返回非零退出码
+- 提供详细的错误消息用于调试
+
+**跨平台支持:**
+- 在 Windows、Linux 和 macOS 上运行
+- 使用平台无关的路径处理
+
+**输出文件名格式:**
+- 默认：`<输入文件名>_<时间戳>.xlsx`
+- 时间戳为自纪元以来的毫秒数
+- 保留原始文件名
+
+**详细日志:**
+- 灰色信息消息显示处理步骤
+- 绿色成功消息
+- 红色错误消息
+- 黄色警告
 
 ## 高级功能
 
