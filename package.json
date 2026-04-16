@@ -27,6 +27,7 @@
     "release": "pnpm publish --access public",
     "compile-cli": "node scripts/build-cli.js",
     "prepublishOnly": "pnpm build",
+    "clean": "bun run scripts/clean.js",
     "test": "vitest",
     "test:run": "vitest run"
   },
