@@ -47,7 +47,7 @@ async function main() {
     if (existsSync(envPath)) {
         try {
             const dotenv = (await import('dotenv')).default;
-            dotenv.config({debug: false, path: envPath});
+            dotenv.config({quiet:true,debug: false, path: envPath});
         } catch (e) {
             // dotenv is optional
         }
