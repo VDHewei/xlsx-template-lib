@@ -114,8 +114,9 @@ describe('bin.ts Helper Functions', () => {
             expect(result).toEqual({});
         });
 
-        it('should throw error for invalid JSON string', async () => {
-            await expect(parseRenderData('invalid json')).rejects.toThrow();
+        it('should return undefined for invalid JSON string', async () => {
+            const result = await parseRenderData('invalid json');
+            expect(result).toBeUndefined();
         });
 
         it('should read and parse JSON file', async () => {
@@ -130,9 +131,10 @@ describe('bin.ts Helper Functions', () => {
             expect(fs.readFile).toHaveBeenCalledWith(expect.any(String), 'utf-8');
         });
 
-        it('should throw error for non-existent JSON file', async () => {
+        it('should return undefined for non-existent JSON file', async () => {
             (existsSync as any).mockReturnValue(false);
-            await expect(parseRenderData('nonexistent.json')).rejects.toThrow();
+            const result = await parseRenderData('nonexistent.json');
+            expect(result).toBeUndefined();
         });
 
         it('should handle URL fetch (if fetch available)', async () => {
@@ -142,6 +144,7 @@ describe('bin.ts Helper Functions', () => {
             // Mock global fetch if available
             global.fetch = vi.fn().mockResolvedValue({
                 json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
             } as any);
 
             try {
@@ -153,7 +156,276 @@ describe('bin.ts Helper Functions', () => {
             }
         });
 
-        it('should throw error when fetch fails without node-fetch', async () => {
+        it('should handle HTTP GET request with default headers', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { name: 'test', value: 123 };
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
+                    headers: expect.any(Headers),
+                    method: 'GET',
+                });
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP POST request with body', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { result: 'success' };
+            const mockBody = JSON.stringify({ query: 'test' });
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl, undefined, mockBody);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
+                    headers: expect.any(Headers),
+                    method: 'GET',
+                    body: mockBody,
+                });
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP request with custom headers', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { data: 'value' };
+            const mockHeaders = ['Authorization:Bearer token123', 'Content-Type:application/json'];
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl, mockHeaders);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
+                    headers: expect.any(Headers),
+                    method: 'GET',
+                });
+
+                // Verify headers are set correctly
+                const callArgs = mockFetch.mock.calls[0];
+                const headers = callArgs[1].headers;
+                expect(headers.get('Authorization')).toBe('Bearer token123');
+                expect(headers.get('Content-Type')).toBe('application/json');
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP POST request with method in headers', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { created: true };
+            const mockBody = JSON.stringify({ name: 'test' });
+            const mockHeaders = ['Content-Type:application/json', 'method:POST'];
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl, mockHeaders, mockBody);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
+                    headers: expect.any(Headers),
+                    method: 'POST',
+                    body: mockBody,
+                });
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP error status codes', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue({ error: 'Not found' }),
+                status: 404,
+                text: vi.fn().mockResolvedValue('Not Found'),
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(result).toBeUndefined();
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP 500 error', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue({ error: 'Internal Server Error' }),
+                status: 500,
+                text: vi.fn().mockResolvedValue('Internal Server Error'),
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(result).toBeUndefined();
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle complex nested JSON from HTTP', async () => {
+            const mockUrl = 'http://api.example.com/complex.json';
+            const mockData = {
+                user: {
+                    id: 1,
+                    name: 'Test User',
+                    profile: {
+                        age: 30,
+                        address: {
+                            city: 'Beijing',
+                            country: 'China'
+                        }
+                    }
+                },
+                items: [
+                    { id: 1, name: 'Item 1' },
+                    { id: 2, name: 'Item 2' }
+                ]
+            };
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(result).toEqual(mockData);
+                expect(result.user.profile.address.city).toBe('Beijing');
+                expect(result.items).toHaveLength(2);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle JSON array from HTTP', async () => {
+            const mockUrl = 'http://api.example.com/list.json';
+            const mockData = [
+                { id: 1, name: 'First' },
+                { id: 2, name: 'Second' },
+                { id: 3, name: 'Third' }
+            ];
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(result).toEqual(mockData);
+                expect(Array.isArray(result)).toBe(true);
+                expect(result).toHaveLength(3);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTPS URL', async () => {
+            const mockUrl = 'https://secure.example.com/data.json';
+            const mockData = { secure: 'data' };
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl);
+                expect(result).toEqual(mockData);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, expect.any(Object));
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle HTTP request with empty body parameter', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { data: 'value' };
+            const emptyBody = '';
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl, undefined, emptyBody);
+                expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
+                    headers: expect.any(Headers),
+                    method: 'GET',
+                });
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should handle malformed header format', async () => {
+            const mockUrl = 'http://api.example.com/data.json';
+            const mockData = { data: 'value' };
+            const malformedHeaders = ['InvalidHeader'];
+
+            const mockFetch = vi.fn().mockResolvedValue({
+                json: vi.fn().mockResolvedValue(mockData),
+                status: 200,
+            } as any);
+
+            global.fetch = mockFetch;
+
+            try {
+                const result = await parseRenderData(mockUrl, malformedHeaders);
+                expect(mockFetch).toHaveBeenCalled();
+                expect(result).toEqual(mockData);
+            } finally {
+                delete (global as any).fetch;
+            }
+        });
+
+        it('should return undefined when fetch fails without node-fetch', async () => {
             const mockUrl = 'https://api.example.com/data.json';
 
             // Mock global fetch to throw error
@@ -166,7 +438,8 @@ describe('bin.ts Helper Functions', () => {
             (globalThis as any).import = vi.fn().mockRejectedValue(new Error('node-fetch not found'));
 
             try {
-                await expect(parseRenderData(mockUrl)).rejects.toThrow();
+                const result = await parseRenderData(mockUrl);
+                expect(result).toBeUndefined();
             } finally {
                 // Clean up
                 delete (global as any).fetch;
