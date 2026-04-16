@@ -36,44 +36,102 @@ export async function resolveFilePath(filePath: string): Promise<string> {
 }
 
 /**
+ * 验证字符串是否为合法 JSON
+ * 先进行快速格式预检查，再进行精确解析
+ */
+export function isValidJSON(str: string): boolean {
+    // 快速预检查：排除明显无效的格式
+    const trimmed = str.trim();
+    if (!trimmed) return false;
+
+    const firstChar = trimmed[0];
+    const lastChar = trimmed.charAt(trimmed.length - 1);
+
+    const validStartEndPairs = [
+        ['{', '}'],
+        ['[', ']'],
+        ['"', '"']
+    ];
+
+    const hasValidFormat = validStartEndPairs.some(
+        ([start, end]) => firstChar === start && lastChar === end
+    );
+
+    // 支持基本类型（true/false/null/数字）
+    if (!hasValidFormat &&
+        !['true', 'false', 'null'].includes(trimmed) &&
+        !/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed)) {
+        return false;
+    }
+
+    // 精确验证
+    try {
+        JSON.parse(str);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+
+/**
  * Helper function to parse render data
  * Supports: JSON string, file path, or URL
  */
-export async function parseRenderData(dataOption: string | undefined): Promise<Record<string, any>> {
+export async function parseRenderData(dataOption: string | undefined, httpHeaders?: string[], body?: string | undefined): Promise<Record<string, any> | undefined> {
     if (!dataOption) {
         return {};
     }
-
     try {
         // Try as JSON string first
-        return JSON.parse(dataOption);
+        if (isValidJSON(dataOption)) {
+            return JSON.parse(dataOption);
+        }
+        // Try Http Remote Call
+        if (dataOption.startsWith('http://') || dataOption.startsWith('https://')) {
+            let fetch: any;
+            // Try to import fetch from native fetch (Node.js 18+) or node-fetch
+            try {
+                fetch = globalThis.fetch;
+            } catch (e3) {
+                try {
+                    // @ts-expect-error - node-fetch is optional dependency
+                    const nodeFetch = await import('node-fetch');
+                    fetch = nodeFetch.default;
+                } catch (e4) {
+                    console.error(chalk.red('Remote URLs require Node.js 18+ or node-fetch package'));
+                    return undefined;
+                }
+            }
+            const headers = new Headers();
+            httpHeaders?.forEach(header => {
+                const [key, value] = header.split(':');
+                headers.append(key, value);
+            });
+            const reqOpts: RequestInit = {
+                headers: headers,
+                method: headers.get(`method`) ? headers.get(`method`).toUpperCase() : 'GET',
+            };
+            if (body !== undefined && body !== "") {
+                reqOpts.body = body;
+            }
+            console.log(chalk.gray(`Fetching data from: ${dataOption}`))
+            console.log(chalk.gray(`request.init: ${JSON.stringify(reqOpts)}`))
+            const response = await fetch(dataOption, reqOpts);
+            if (response.status !== 200) {
+                console.error(chalk.red(`Failed to fetch data from: ${dataOption}, status: ${response.status},${response.text()}`));
+                return undefined;
+            }
+            return response.json();
+        }
+        // Try Local file
+        const filePath = await resolveFilePath(dataOption);
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        return JSON.parse(fileContent);
     } catch (e) {
         // Try as file path
-        try {
-            const filePath = await resolveFilePath(dataOption);
-            const fileContent = await fs.readFile(filePath, 'utf-8');
-            return JSON.parse(fileContent);
-        } catch (e2) {
-            // Try as remote URL
-            if (dataOption.startsWith('http://') || dataOption.startsWith('https://')) {
-                let fetch: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | ((arg0: string) => any);
-                // Try to import fetch from native fetch (Node.js 18+) or node-fetch
-                try {
-                    fetch = globalThis.fetch;
-                } catch (e3) {
-                    try {
-                        // @ts-expect-error - node-fetch is optional dependency
-                        const nodeFetch = await import('node-fetch');
-                        fetch = nodeFetch.default;
-                    } catch (e4) {
-                        throw new Error('Remote URLs require Node.js 18+ or node-fetch package');
-                    }
-                }
-                const response = await fetch(dataOption);
-                return response.json();
-            }
-            throw new Error(`Failed to parse render data from: ${dataOption}`);
-        }
+        console.error(chalk.red(`Failed to parse render data from: ${dataOption}`));
+        return undefined;
     }
 }
 
@@ -211,7 +269,7 @@ export async function addRuleToSheet(
     // Auto-fit column width
     const column = worksheet.getColumn(ruleCol);
     column.width = Math.max(column.width || 10, ruleExpr.length + 2);
-    if(currentRow === 1 && ruleCol === 2){
+    if (currentRow === 1 && ruleCol === 2) {
         const column = worksheet.getColumn(1);
         column.width = Math.max(column.width || 10, ruleExpr.length + 2);
     }

@@ -127,6 +127,8 @@ async function main() {
         .option('-n,--sheet-name <string>', "render xlsx sheet name when xlsx has multiple sheets")
         .option('-s,--save <string>', "save render xlsx file to user dir")
         .option('-d,--data <string>', "render xlsx file data from")
+        .option('--header <string>', "call remote http json data with header", [])
+        .option('--body <string>', "call remote http json request with body")
         .action(async (xlsxFile: string, options: { [key: string]: any }) => {
             try {
                 console.log(chalk.green('📄 Rendering Excel template...'));
@@ -149,7 +151,10 @@ async function main() {
                 console.log(chalk.gray('Sheet validation passed'));
 
                 // Parse render data
-                const renderData = await parseRenderData(options.data);
+                const renderData = await parseRenderData(options.data, options.header as string[], options.body as string);
+                if(renderData === undefined){
+                    process.exit(1);
+                }
                 if (Object.keys(renderData).length > 0) {
                     console.log(chalk.gray(`Render data loaded with ${Object.keys(renderData).length} keys`));
                 }
