@@ -220,9 +220,8 @@ async function main() {
                     console.log(chalk.gray(`Reading rules from file: ${options.file}`));
                     rules = await parseRulesFromFile(options.file);
                     console.log(chalk.green(`✓ Loaded ${rules.length} rules from file`));
-                }
-                // Mode 2: Read from command line
-                else if (options.rule) {
+                } else if (options.rule) {
+                    // Mode 2: Read from command line
                     // Normalize to array if single rule
                     const ruleArray = Array.isArray(options.rule) ? options.rule : [options.rule];
 

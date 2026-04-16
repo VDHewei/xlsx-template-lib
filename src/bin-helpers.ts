@@ -206,6 +206,7 @@ export async function parseRulesFromFile(filePath: string): Promise<{ type: stri
     const lines = fileContent.split('\n');
     const rules: { type: string; rule: string }[] = [];
     const validTypes = ['cell', 'alias', 'rowCell', 'mergeCell'];
+    const validRulesSet = new Set<string>();
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -223,11 +224,14 @@ export async function parseRulesFromFile(filePath: string): Promise<{ type: stri
         }
 
         const type = line.substring(0, spaceIndex).trim();
-        const rule = line.substring(spaceIndex + 1).trim();
+        const items = line.substring(spaceIndex + 1).trim().split(' ');
 
-        if (!type || !rule) {
+        if (!type) {
             console.log(chalk.yellow(`⚠ Line ${i + 1}: Invalid format. Expected "<type> ruleExpr"`));
             continue;
+        }
+        if(!items || items.length === 0){
+            continue
         }
 
         // Validate rule type
@@ -235,8 +239,16 @@ export async function parseRulesFromFile(filePath: string): Promise<{ type: stri
             console.log(chalk.yellow(`⚠ Line ${i + 1}: Invalid rule type "${type}". Must be one of: ${validTypes.join(', ')}`));
             continue;
         }
-
-        rules.push({ type, rule });
+        for(const rule of items) {
+            let str = rule.trim();
+            let key = `${type}:${str}`;
+            if(validRulesSet.has(key)){
+                console.log(chalk.yellow(`⚠ Line ${i + 1}: Duplicate rule "${str}"`));
+                continue;
+            }
+            validRulesSet.add(key);
+            rules.push({ type:type, rule:str});
+        }
     }
 
     if (rules.length === 0) {
