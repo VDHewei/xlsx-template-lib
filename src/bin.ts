@@ -9,7 +9,7 @@ import {
     BufferType,
     compileAll,
     compileRuleSheetName,
-    AutoOptions,
+    AutoOptions, RuleMapOptions,
 } from './index';
 import {
     generateOutputFilename,
@@ -90,10 +90,10 @@ program.command('compile')
 
             // Compile file
             console.log(chalk.gray('Compiling rules...'));
-            const compiledBuffer = await compileAll(buffer, {
-                sheetName: ruleSheetName,
-                remove: options.remove || false,
-            } as unknown as AutoOptions);
+            const opts = new RuleMapOptions();
+            opts.sheetName = ruleSheetName;
+            opts.remove = options.remove || false;
+            const compiledBuffer = await compileAll(buffer,opts as AutoOptions);
             console.log(chalk.green('✓ Compilation completed'));
 
             // Determine output path
@@ -158,11 +158,10 @@ program.command("render")
             if (options.compile) {
                 console.log(chalk.gray('Auto-compiling rules...'));
                 const ruleSheetName = options.sheetName || compileRuleSheetName;
-
-                const compiledResult = await compileAll(buffer, {
-                    sheetName: ruleSheetName,
-                    remove: false,  // Don't remove rule sheet during render
-                } as unknown as AutoOptions);
+                const opts = new RuleMapOptions();
+                opts.sheetName = ruleSheetName;
+                opts.remove = false;
+                const compiledResult = await compileAll(buffer,opts as AutoOptions);
                 buffer = Buffer.from(compiledResult);
                 xlsx = await XlsxRender.create(buffer);
                 console.log(chalk.green('✓ Auto-compilation completed'));
