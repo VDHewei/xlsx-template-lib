@@ -140,6 +140,7 @@ async function main() {
         .option('-d,--data <string>', "render xlsx file data from")
         .option('--header <string>', "call remote http json data with header", [])
         .option('--body <string>', "call remote http json request with body")
+        .option('-r,--remove', 'remove configure rules sheet', false)
         .action(async (xlsxFile: string, options: { [key: string]: any }) => {
             try {
                 console.log(chalk.green('📄 Rendering Excel template...'));
@@ -176,7 +177,7 @@ async function main() {
                     const ruleSheetName = options.sheetName || compileRuleSheetName;
                     const opts = new RuleMapOptions();
                     opts.sheetName = ruleSheetName;
-                    opts.remove = false;
+                    opts.remove = options.remove || false;
                     const compiledResult = await compileAll(buffer, opts as AutoOptions);
                     buffer = Buffer.from(compiledResult);
                     xlsx = await XlsxRender.create(buffer);
