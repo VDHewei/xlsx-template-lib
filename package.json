@@ -1,6 +1,6 @@
 {
   "name": "@vdhewei/xlsx-template-lib",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "description": "xlsx template",
   "files": [
     "dist",
