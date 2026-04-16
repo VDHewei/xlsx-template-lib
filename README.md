@@ -678,6 +678,8 @@ xlsx-cli render <xlsx-file> [options]
 - `-n, --sheet-name <string>` - Sheet name to render (default: first sheet)
 - `-s, --save <string>` - Save rendered file to specified directory (default: current directory)
 - `-d, --data <string>` - Render data source (JSON string, file path, or URL)
+- `--header <string>` - HTTP headers for remote data fetch (can be specified multiple times, format: `Key:Value`)
+- `--body <string>` - HTTP request body for POST requests
 
 **Examples:**
 
@@ -700,6 +702,15 @@ xlsx-cli render template.xlsx -c -d './data.json'
 # Render specific sheet
 xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
 
+# Render with custom HTTP headers
+xlsx-cli render template.xlsx -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
+
+# Render with POST request body
+xlsx-cli render template.xlsx -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
+
+# Render with POST method via header
+xlsx-cli render template.xlsx -d 'https://api.example.com/api/create' --body '{"name":"Test"}' --header 'Content-Type:application/json' --header 'method:POST'
+
 # Full example
 xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 ```
@@ -708,6 +719,70 @@ xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 - **JSON String**: Direct JSON string enclosed in single quotes
 - **Local File**: Path to `.json` file (relative or absolute)
 - **Remote URL**: HTTP/HTTPS URL returning JSON
+
+**HTTP Request Options (for Remote URL):**
+- **Headers**: Use `--header` to add custom HTTP headers (can be specified multiple times)
+  - Format: `--header 'Key:Value'`
+  - Example: `--header 'Authorization:Bearer token123' --header 'Content-Type:application/json'`
+  - Special header: `method:POST` can set the HTTP method to POST
+- **Body**: Use `--body` to send request body (typically for POST requests)
+  - Format: `--body '{"key":"value"}'`
+  - Automatically uses POST method when body is provided
+- **Default Behavior**: GET request with no headers
+
+**HTTP Request Examples:**
+
+```bash
+# GET request with custom headers
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/data.json' \
+  --header 'Authorization:Bearer your-token' \
+  --header 'X-API-Key:api-key-123'
+
+# POST request with JSON body
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/api/query' \
+  --body '{"query":"SELECT * FROM users LIMIT 10"}' \
+  --header 'Content-Type:application/json'
+
+# POST request with method specified in header
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/api/create' \
+  --body '{"name":"New Record","value":100}' \
+  --header 'Content-Type:application/json' \
+  --header 'method:POST'
+
+# Complex example with authentication and query body
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/v1/export' \
+  --header 'Authorization:Bearer eyJhbGc...' \
+  --header 'Content-Type:application/json' \
+  --body '{"format":"xlsx","filter":{"status":"active"}}' \
+  -c -n Sheet1 -s ./output/
+```
+
+**HTTP Request Details:**
+
+1. **Method Determination**:
+   - Default: `GET`
+   - With `--body`: Automatically becomes `POST`
+   - With `method:POST` header: Explicitly set to `POST`
+   - With `method:GET` header: Explicitly set to `GET`
+
+2. **Header Format**:
+   - Headers are parsed as `Key:Value` pairs
+   - Multiple `--header` options can be used
+   - Example: `--header 'Accept:application/json' --header 'User-Agent:MyApp/1.0'`
+
+3. **Error Handling**:
+   - Non-200 status codes return `undefined` and display error message
+   - Network errors are caught and displayed in red
+   - Missing `node-fetch` (Node.js < 18) displays error message
+
+4. **Supported Data Formats**:
+   - JSON objects: `{"key":"value"}`
+   - JSON arrays: `[{"id":1},{"id":2}]`
+   - Nested structures: `{"user":{"name":"John","age":30}}`
 
 **Output:**
 - Rendered Excel file saved as `<filename>_<timestamp>.xlsx`

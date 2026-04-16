@@ -676,6 +676,8 @@ xlsx-cli render <xlsx-文件> [选项]
 - `-n, --sheet-name <string>` - 要渲染的工作表名称（默认：第一个工作表）
 - `-s, --save <string>` - 将渲染后的文件保存到指定目录（默认：当前目录）
 - `-d, --data <string>` - 渲染数据源（JSON 字符串、文件路径或 URL）
+- `--header <string>` - 远程数据获取的 HTTP 请求头（可指定多次，格式：`Key:Value`）
+- `--body <string>` - POST 请求的 HTTP 请求体
 
 **示例:**
 
@@ -698,6 +700,15 @@ xlsx-cli render template.xlsx -c -d './data.json'
 # 渲染指定工作表
 xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
 
+# 使用自定义 HTTP 请求头渲染
+xlsx-cli render template.xlsx -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
+
+# 使用 POST 请求体渲染
+xlsx-cli render template.xlsx -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
+
+# 通过 header 指定 POST 方法
+xlsx-cli render template.xlsx -d 'https://api.example.com/api/create' --body '{"name":"测试"}' --header 'Content-Type:application/json' --header 'method:POST'
+
 # 完整示例
 xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 ```
@@ -706,6 +717,70 @@ xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 - **JSON 字符串**: 直接使用单引号括起来的 JSON 字符串
 - **本地文件**: `.json` 文件的路径（相对或绝对）
 - **远程 URL**: 返回 JSON 的 HTTP/HTTPS URL
+
+**HTTP 请求选项（用于远程 URL）:**
+- **请求头**: 使用 `--header` 添加自定义 HTTP 请求头（可指定多次）
+  - 格式：`--header 'Key:Value'`
+  - 示例：`--header 'Authorization:Bearer token123' --header 'Content-Type:application/json'`
+  - 特殊请求头：`method:POST` 可设置 HTTP 方法为 POST
+- **请求体**: 使用 `--body` 发送请求体（通常用于 POST 请求）
+  - 格式：`--body '{"key":"value"}'`
+  - 提供请求体时自动使用 POST 方法
+- **默认行为**: 无请求头的 GET 请求
+
+**HTTP 请求示例:**
+
+```bash
+# 带自定义请求头的 GET 请求
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/data.json' \
+  --header 'Authorization:Bearer your-token' \
+  --header 'X-API-Key:api-key-123'
+
+# 带 JSON 请求体的 POST 请求
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/api/query' \
+  --body '{"query":"SELECT * FROM users LIMIT 10"}' \
+  --header 'Content-Type:application/json'
+
+# 通过 header 指定 POST 方法
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/api/create' \
+  --body '{"name":"新记录","value":100}' \
+  --header 'Content-Type:application/json' \
+  --header 'method:POST'
+
+# 复杂示例：带认证和查询请求体
+xlsx-cli render template.xlsx \
+  -d 'https://api.example.com/v1/export' \
+  --header 'Authorization:Bearer eyJhbGc...' \
+  --header 'Content-Type:application/json' \
+  --body '{"format":"xlsx","filter":{"status":"active"}}' \
+  -c -n Sheet1 -s ./output/
+```
+
+**HTTP 请求详细说明:**
+
+1. **HTTP 方法确定**:
+   - 默认：`GET`
+   - 使用 `--body`：自动变为 `POST`
+   - 使用 `method:POST` 请求头：显式设置为 `POST`
+   - 使用 `method:GET` 请求头：显式设置为 `GET`
+
+2. **请求头格式**:
+   - 请求头按 `Key:Value` 格式解析
+   - 可以使用多个 `--header` 选项
+   - 示例：`--header 'Accept:application/json' --header 'User-Agent:MyApp/1.0'`
+
+3. **错误处理**:
+   - 非 200 状态码返回 `undefined` 并显示错误消息
+   - 网络错误会被捕获并以红色显示
+   - 缺少 `node-fetch`（Node.js < 18）会显示错误消息
+
+4. **支持的数据格式**:
+   - JSON 对象：`{"key":"value"}`
+   - JSON 数组：`[{"id":1},{"id":2}]`
+   - 嵌套结构：`{"user":{"name":"张三","age":30}}`
 
 **输出:**
 - 渲染后的 Excel 文件保存为 `<文件名>_<时间戳>.xlsx`
