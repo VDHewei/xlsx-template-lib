@@ -25,7 +25,7 @@
     "build-cli": "tsup src/bin.ts -d bin",
     "cli": "node dist/bin.js",
     "release": "pnpm publish --access public",
-    "compile-cli": "bun build src/bin.ts --compile --minify --outfile bin/xlsx-cli",
+    "compile-cli": "node scripts/build-cli.js",
     "prepublishOnly": "pnpm build",
     "test": "vitest",
     "test:run": "vitest run"

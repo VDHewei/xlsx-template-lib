@@ -16,30 +16,41 @@ import {
     resolveFilePath,
     parseRenderData,
     checkSheetAndPlaceholders,
-    addRuleToSheet,
     parseRulesFromFile,
     addMultipleRulesToSheet,
 } from './bin-helpers';
 
-async function main() {
-    // Load package.json version
-    let version = '1.0.0';
-    try {
-        // Try multiple possible paths for package.json
-        const possiblePaths = [
-            path.join(process.cwd(), 'package.json'),
-            path.join(process.cwd(), '..', 'package.json'),
-        ];
+declare const __VERSION__: string;
 
-        for (const packagePath of possiblePaths) {
-            if (existsSync(packagePath)) {
-                const packageJson = JSON.parse(await fs.readFile(packagePath, 'utf-8'));
-                version = packageJson.version;
-                break;
-            }
+async function main() {
+    // Load version: prioritize compile-time injected __VERSION__, otherwise read from package.json
+    let version: string;
+    try {
+        // Try to use compile-time injected version
+        version = __VERSION__;
+        // Remove surrounding quotes if present
+        if (version.startsWith('"') && version.endsWith('"')) {
+            version = version.slice(1, -1);
         }
     } catch (e) {
-        // Fallback to default version
+        // Fallback: read from package.json
+        version = '1.0.0';
+        try {
+            const possiblePaths = [
+                path.join(process.cwd(), 'package.json'),
+                path.join(process.cwd(), '..', 'package.json'),
+            ];
+
+            for (const packagePath of possiblePaths) {
+                if (existsSync(packagePath)) {
+                    const packageJson = JSON.parse(await fs.readFile(packagePath, 'utf-8'));
+                    version = packageJson.version;
+                    break;
+                }
+            }
+        } catch (e) {
+            // Fallback to default version
+        }
     }
 
     // Load .env if exists
@@ -152,7 +163,7 @@ async function main() {
 
                 // Parse render data
                 const renderData = await parseRenderData(options.data, options.header as string[], options.body as string);
-                if(renderData === undefined){
+                if (renderData === undefined) {
                     process.exit(1);
                 }
                 if (Object.keys(renderData).length > 0) {
