@@ -534,7 +534,7 @@ import { ZipXlsxTemplateApp } from '@vdhewei/xlsx-template-lib';
 import * as fs from 'node:fs/promises';
 
 // Load template from buffer
-const templateBuffer = await fs.readFile('template.xlsx');
+const templateBuffer = await fs.readFile('template.zip');
 const app = new ZipXlsxTemplateApp(templateBuffer);
 
 // Render with data
@@ -562,7 +562,7 @@ await fs.writeFile('output.xlsx', output);
 ```typescript
 import { XlsxRender } from '@vdhewei/xlsx-template-lib';
 
-const templateBuffer = await fs.readFile('template.xlsx');
+const templateBuffer = await fs.readFile('template.zip');
 const xlsx = await XlsxRender.create(templateBuffer);
 
 // Render a specific sheet
@@ -594,7 +594,7 @@ const compileOpts = {
   remove: true                           // Remove rule sheet after compile
 };
 
-const zipBuffer = await fs.readFile('template.xlsx');
+const zipBuffer = await fs.readFile('template.zip');
 const result = await ZipXlsxTemplateApp.compileTo(zipBuffer, {
   checker: async (buf, opts, values, fileName) => {
     // Custom validation logic
@@ -642,19 +642,19 @@ xlsx-cli compile <xlsx-file> [options]
 
 ```bash
 # Basic compile with default settings
-xlsx-cli compile template.xlsx
+xlsx-cli compile template.zip
 
 # Compile and save to specific location
-xlsx-cli compile template.xlsx -s ./output/
+xlsx-cli compile template.zip -s ./output/
 
 # Compile specific sheet
-xlsx-cli compile template.xlsx -n Sheet1
+xlsx-cli compile template.zip -n Sheet1
 
 # Compile and remove config sheet
-xlsx-cli compile template.xlsx -r
+xlsx-cli compile template.zip -r
 
 # Full example
-xlsx-cli compile template.xlsx -s ./output/ -n Sheet1 -r
+xlsx-cli compile template.zip -s ./output/ -n Sheet1 -r
 ```
 
 **Output:**
@@ -685,34 +685,34 @@ xlsx-cli render <xlsx-file> [options]
 
 ```bash
 # Basic render with empty data
-xlsx-cli render template.xlsx
+xlsx-cli render template.zip
 
 # Render with JSON data string
-xlsx-cli render template.xlsx -d '{"name":"John","age":30}'
+xlsx-cli render template.zip -d '{"name":"John","age":30}'
 
 # Render with JSON file
-xlsx-cli render template.xlsx -d ./data.json
+xlsx-cli render template.zip -d ./data.json
 
 # Render with remote JSON URL
-xlsx-cli render template.xlsx -d 'https://api.example.com/data.json'
+xlsx-cli render template.zip -d 'https://api.example.com/data.json'
 
 # Render with auto-compile
-xlsx-cli render template.xlsx -c -d './data.json'
+xlsx-cli render template.zip -c -d './data.json'
 
 # Render specific sheet
-xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
+xlsx-cli render template.zip -n Sheet1 -d './data.json'
 
 # Render with custom HTTP headers
-xlsx-cli render template.xlsx -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
+xlsx-cli render template.zip -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
 
 # Render with POST request body
-xlsx-cli render template.xlsx -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
+xlsx-cli render template.zip -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
 
 # Render with POST method via header
-xlsx-cli render template.xlsx -d 'https://api.example.com/api/create' --body '{"name":"Test"}' --header 'Content-Type:application/json' --header 'method:POST'
+xlsx-cli render template.zip -d 'https://api.example.com/api/create' --body '{"name":"Test"}' --header 'Content-Type:application/json' --header 'method:POST'
 
 # Full example
-xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
+xlsx-cli render template.zip -c -n Sheet1 -s ./output/ -d './data.json'
 ```
 
 **Data Sources:**
@@ -734,26 +734,26 @@ xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 
 ```bash
 # GET request with custom headers
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/data.json' \
   --header 'Authorization:Bearer your-token' \
   --header 'X-API-Key:api-key-123'
 
 # POST request with JSON body
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/api/query' \
   --body '{"query":"SELECT * FROM users LIMIT 10"}' \
   --header 'Content-Type:application/json'
 
 # POST request with method specified in header
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/api/create' \
   --body '{"name":"New Record","value":100}' \
   --header 'Content-Type:application/json' \
   --header 'method:POST'
 
 # Complex example with authentication and query body
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/v1/export' \
   --header 'Authorization:Bearer eyJhbGc...' \
   --header 'Content-Type:application/json' \
@@ -820,28 +820,28 @@ xlsx-cli rules <xlsx-file> [options]
 **Single Rule (Command Line):**
 ```bash
 # Add alias rule
-xlsx-cli rules template.xlsx -t alias -r 'T=template'
+xlsx-cli rules template.zip -t alias -r 'T=template'
 
 # Add cell rule
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}'
 
 # Add rowCell rule
-xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
+xlsx-cli rules template.zip -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
 
 # Add mergeCell rule
-xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
+xlsx-cli rules template.zip -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
 ```
 
 **Multiple Rules (Command Line):**
 ```bash
 # Add multiple rules with same type
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
 ```
 
 **Rules from File:**
 ```bash
 # Read rules from file
-xlsx-cli rules template.xlsx -f rules.txt
+xlsx-cli rules template.zip -f rules.txt
 
 # Create rules.txt file:
 # This is a comment
@@ -855,8 +855,8 @@ mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:
 
 **Save to Specific Directory:**
 ```bash
-xlsx-cli rules template.xlsx -f rules.txt -s ./output/
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
+xlsx-cli rules template.zip -f rules.txt -s ./output/
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}' -s ./output/
 ```
 
 **File Format (-f mode):**
@@ -989,7 +989,7 @@ Main class for rendering single Excel files.
 ### Template Structure
 
 ```
-template.xlsx
+template.zip
 ├── Sheet1 (Data Sheet with placeholders)
 │   ├── A1: ${contract.contractCode}
 │   ├── B1: ${contract.contractTitle}
@@ -1004,7 +1004,7 @@ template.xlsx
 
 | Step | Input                 | Output | Description |
 |:-----|:----------------------|:-------|:------------|
-| 1. Load | `template.xlsx` Buffer | `ZipXlsxTemplateApp` | Load template file |
+| 1. Load | `template.zip` Buffer | `ZipXlsxTemplateApp` | Load template file |
 | 2. Compile | Rule Config Sheet     | Compiled Rules | Parse mergeCell/cell/rowCell rules |
 | 3. Substitute | Data Object           | Rendered Sheets | Replace `${...}` placeholders |
 | 4. Generate | -                     | `output.xlsx` Buffer | Final output file |
@@ -1022,7 +1022,7 @@ AddCommand('calculateTotal', (obj, args) => {
 
 // Main processing
 async function processTemplate() {
-  const templateBuffer = await fs.readFile('template.xlsx');
+  const templateBuffer = await fs.readFile('template.zip');
   
   const app = new ZipXlsxTemplateApp(templateBuffer);
   
