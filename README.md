@@ -533,7 +533,7 @@ Built-in and custom functions for data processing:
 import { ZipXlsxTemplateApp } from '@vdhewei/xlsx-template-lib';
 import * as fs from 'node:fs/promises';
 
-// Load template from buffer
+// Load zip template from buffer,zip file has [a.xlsx,b.xlsx...]
 const templateBuffer = await fs.readFile('template.zip');
 const app = new ZipXlsxTemplateApp(templateBuffer);
 

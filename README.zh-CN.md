@@ -531,8 +531,8 @@ B:1=${@LLR.value}
 import { ZipXlsxTemplateApp } from '@vdhewei/xlsx-template-lib';
 import * as fs from 'node:fs/promises';
 
-// 从 buffer 加载模板
-const templateBuffer = await fs.readFile('template.xlsx');
+// 从 zip buffer 加载模板 zip 文件有 : [a.xlsx,b.xlsx...]
+const templateBuffer = await fs.readFile('template.zip');
 const app = new ZipXlsxTemplateApp(templateBuffer);
 
 // 使用数据渲染
@@ -560,7 +560,7 @@ await fs.writeFile('output.xlsx', output);
 ```typescript
 import { XlsxRender } from '@vdhewei/xlsx-template-lib';
 
-const templateBuffer = await fs.readFile('template.xlsx');
+const templateBuffer = await fs.readFile('template.zip');
 const xlsx = await XlsxRender.create(templateBuffer);
 
 // 渲染特定工作表
@@ -592,7 +592,7 @@ const compileOpts = {
   remove: true                           // 编译后移除规则工作表
 };
 
-const zipBuffer = await fs.readFile('template.xlsx');
+const zipBuffer = await fs.readFile('template.zip');
 const result = await ZipXlsxTemplateApp.compileTo(zipBuffer, {
   checker: async (buf, opts, values, fileName) => {
     // 自定义验证逻辑
@@ -640,19 +640,19 @@ xlsx-cli compile <xlsx-文件> [选项]
 
 ```bash
 # 使用默认设置编译
-xlsx-cli compile template.xlsx
+xlsx-cli compile template.zip
 
 # 编译并保存到指定位置
-xlsx-cli compile template.xlsx -s ./output/
+xlsx-cli compile template.zip -s ./output/
 
 # 编译指定工作表
-xlsx-cli compile template.xlsx -n Sheet1
+xlsx-cli compile template.zip -n Sheet1
 
 # 编译并移除配置工作表
-xlsx-cli compile template.xlsx -r
+xlsx-cli compile template.zip -r
 
 # 完整示例
-xlsx-cli compile template.xlsx -s ./output/ -n Sheet1 -r
+xlsx-cli compile template.zip -s ./output/ -n Sheet1 -r
 ```
 
 **输出:**
@@ -683,34 +683,34 @@ xlsx-cli render <xlsx-文件> [选项]
 
 ```bash
 # 使用空数据基本渲染
-xlsx-cli render template.xlsx
+xlsx-cli render template.zip
 
 # 使用 JSON 字符串渲染
-xlsx-cli render template.xlsx -d '{"name":"张三","age":30}'
+xlsx-cli render template.zip -d '{"name":"张三","age":30}'
 
 # 使用 JSON 文件渲染
-xlsx-cli render template.xlsx -d ./data.json
+xlsx-cli render template.zip -d ./data.json
 
 # 使用远程 JSON URL 渲染
-xlsx-cli render template.xlsx -d 'https://api.example.com/data.json'
+xlsx-cli render template.zip -d 'https://api.example.com/data.json'
 
 # 渲染并自动编译
-xlsx-cli render template.xlsx -c -d './data.json'
+xlsx-cli render template.zip -c -d './data.json'
 
 # 渲染指定工作表
-xlsx-cli render template.xlsx -n Sheet1 -d './data.json'
+xlsx-cli render template.zip -n Sheet1 -d './data.json'
 
 # 使用自定义 HTTP 请求头渲染
-xlsx-cli render template.xlsx -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
+xlsx-cli render template.zip -d 'https://api.example.com/data.json' --header 'Authorization:Bearer token123' --header 'Content-Type:application/json'
 
 # 使用 POST 请求体渲染
-xlsx-cli render template.xlsx -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
+xlsx-cli render template.zip -d 'https://api.example.com/api/query' --body '{"query":"SELECT * FROM users"}' --header 'Content-Type:application/json'
 
 # 通过 header 指定 POST 方法
-xlsx-cli render template.xlsx -d 'https://api.example.com/api/create' --body '{"name":"测试"}' --header 'Content-Type:application/json' --header 'method:POST'
+xlsx-cli render template.zip -d 'https://api.example.com/api/create' --body '{"name":"测试"}' --header 'Content-Type:application/json' --header 'method:POST'
 
 # 完整示例
-xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
+xlsx-cli render template.zip -c -n Sheet1 -s ./output/ -d './data.json'
 ```
 
 **数据源:**
@@ -732,26 +732,26 @@ xlsx-cli render template.xlsx -c -n Sheet1 -s ./output/ -d './data.json'
 
 ```bash
 # 带自定义请求头的 GET 请求
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/data.json' \
   --header 'Authorization:Bearer your-token' \
   --header 'X-API-Key:api-key-123'
 
 # 带 JSON 请求体的 POST 请求
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/api/query' \
   --body '{"query":"SELECT * FROM users LIMIT 10"}' \
   --header 'Content-Type:application/json'
 
 # 通过 header 指定 POST 方法
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/api/create' \
   --body '{"name":"新记录","value":100}' \
   --header 'Content-Type:application/json' \
   --header 'method:POST'
 
 # 复杂示例：带认证和查询请求体
-xlsx-cli render template.xlsx \
+xlsx-cli render template.zip \
   -d 'https://api.example.com/v1/export' \
   --header 'Authorization:Bearer eyJhbGc...' \
   --header 'Content-Type:application/json' \
@@ -818,28 +818,28 @@ xlsx-cli rules <xlsx-文件> [选项]
 **单个规则（命令行）：**
 ```bash
 # 添加 alias 规则
-xlsx-cli rules template.xlsx -t alias -r 'T=template'
+xlsx-cli rules template.zip -t alias -r 'T=template'
 
 # 添加 cell 规则
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}'
 
 # 添加 rowCell 规则
-xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
+xlsx-cli rules template.zip -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
 
 # 添加 mergeCell 规则
-xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
+xlsx-cli rules template.zip -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
 ```
 
 **多个规则（命令行）：**
 ```bash
 # 添加同类型的多个规则
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}' -r 'A:1=${@T}' -r 'B:1=${@LLR.value}'
 ```
 
 **从文件读取规则：**
 ```bash
 # 从文件读取规则
-xlsx-cli rules template.xlsx -f rules.txt
+xlsx-cli rules template.zip -f rules.txt
 
 # 创建 rules.txt 文件：
 # 这是注释行
@@ -853,8 +853,8 @@ mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:
 
 **保存到指定目录：**
 ```bash
-xlsx-cli rules template.xlsx -f rules.txt -s ./output/
-xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
+xlsx-cli rules template.zip -f rules.txt -s ./output/
+xlsx-cli rules template.zip -t cell -r 'D:7=${@LLR.value}' -s ./output/
 ```
 
 **文件格式（-f 模式）：**
@@ -989,7 +989,7 @@ const output = await app.generate();
 ### 模板结构
 
 ```
-template.xlsx
+template.zip
 ├── Sheet1 (数据工作表，包含占位符)
 │   ├── A1: ${contract.contractCode}
 │   ├── B1: ${contract.contractTitle}
@@ -1004,7 +1004,7 @@ template.xlsx
 
 | 步骤 | 输入                    | 输出 | 说明 |
 |:-----|:----------------------|:-----|:-----|
-| 1. 加载 | `template.xlsx` Buffer | `ZipXlsxTemplateApp` | 加载模板文件 |
+| 1. 加载 | `template.zip` Buffer | `ZipXlsxTemplateApp` | 加载模板文件 |
 | 2. 编译 | 规则配置工作表               | 编译后的规则 | 解析 mergeCell/cell/rowCell 规则 |
 | 3. 替换 | 数据对象                  | 渲染后的工作表 | 替换 `${...}` 占位符 |
 | 4. 生成 | -                     | `output.xlsx` Buffer | 最终输出文件 |
@@ -1022,7 +1022,7 @@ AddCommand('calculateTotal', (obj, args) => {
 
 // 主处理流程
 async function processTemplate() {
-  const templateBuffer = await fs.readFile('template.xlsx');
+  const templateBuffer = await fs.readFile('template.zip');
   
   const app = new ZipXlsxTemplateApp(templateBuffer);
   
