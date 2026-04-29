@@ -920,7 +920,8 @@ AddCommand('multiply', (obj, args) => {
   const values = args.groups.map(g => valueDotGet(obj, g));
   return values.reduce((a, b) => a * b, 1);
 });
-
+// 读取xlsx模板
+const data = await fs.readFile('simple.xlsx');
 // 使用自定义命令生成模板
 const buffer = await generateCommandsXlsxTemplate(data, options);
 ```
@@ -1001,12 +1002,12 @@ template.xlsx
 
 ### 编译与渲染流程
 
-| 步骤 | 输入 | 输出 | 说明 |
-|:-----|:-----|:-----|:-----|
+| 步骤 | 输入                    | 输出 | 说明 |
+|:-----|:----------------------|:-----|:-----|
 | 1. 加载 | `template.xlsx` Buffer | `ZipXlsxTemplateApp` | 加载模板文件 |
-| 2. 编译 | 规则配置工作表 | 编译后的规则 | 解析 mergeCell/cell/rowCell 规则 |
-| 3. 替换 | 数据对象 | 渲染后的工作表 | 替换 `${...}` 占位符 |
-| 4. 生成 | - | `output.xlsx` Buffer | 最终输出文件 |
+| 2. 编译 | 规则配置工作表               | 编译后的规则 | 解析 mergeCell/cell/rowCell 规则 |
+| 3. 替换 | 数据对象                  | 渲染后的工作表 | 替换 `${...}` 占位符 |
+| 4. 生成 | -                     | `output.xlsx` Buffer | 最终输出文件 |
 
 ```typescript
 import { ZipXlsxTemplateApp, AddCommand } from '@vdhewei/xlsx-template-lib';

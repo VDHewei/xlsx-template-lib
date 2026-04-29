@@ -921,7 +921,7 @@ AddCommand('multiply', (obj, args) => {
   const values = args.groups.map(g => valueDotGet(obj, g));
   return values.reduce((a, b) => a * b, 1);
 });
-
+const data = await fs.readFile('simple.xlsx');
 // Generate template with custom commands
 const buffer = await generateCommandsXlsxTemplate(data, options);
 ```
@@ -1002,12 +1002,12 @@ template.xlsx
 
 ### Compile & Render Flow
 
-| Step | Input | Output | Description |
-|:-----|:------|:-------|:------------|
+| Step | Input                 | Output | Description |
+|:-----|:----------------------|:-------|:------------|
 | 1. Load | `template.xlsx` Buffer | `ZipXlsxTemplateApp` | Load template file |
-| 2. Compile | Rule Config Sheet | Compiled Rules | Parse mergeCell/cell/rowCell rules |
-| 3. Substitute | Data Object | Rendered Sheets | Replace `${...}` placeholders |
-| 4. Generate | - | `output.xlsx` Buffer | Final output file |
+| 2. Compile | Rule Config Sheet     | Compiled Rules | Parse mergeCell/cell/rowCell rules |
+| 3. Substitute | Data Object           | Rendered Sheets | Replace `${...}` placeholders |
+| 4. Generate | -                     | `output.xlsx` Buffer | Final output file |
 
 ```typescript
 import { ZipXlsxTemplateApp, AddCommand } from '@vdhewei/xlsx-template-lib';
