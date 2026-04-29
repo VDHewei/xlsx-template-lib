@@ -618,6 +618,17 @@ npm install -g @vdhewei/xlsx-template-lib
 npx @vdhewei/xlsx-template-lib <命令> [选项]
 ```
 
+或者 直接下载源码使用 Bun 将源码编译成本地二进制CLI
+```bash
+git clone https://github.com/VDHewei/xlsx-template-lib.git
+cd xlsx-template-lib
+pnpm i
+npm install -g bun
+pnpm run complie-cli # 默认编译产物在当前 bin/目录下 (windows:xlsx-cli.exe ,other:xlsx-cli  ) 
+# 或者用户指定编译输出目录 (-o 或者 --output-dir)
+pnpm run compile-cli -o your-path/
+```
+
 #### 命令
 
 ##### 1. compile 命令

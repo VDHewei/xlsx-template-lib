@@ -620,6 +620,17 @@ Or use directly from `npx`:
 npx @vdhewei/xlsx-template-lib <command> [options]
 ```
 
+Or git clone source code use bun compile to local Native CLI
+```bash
+git clone https://github.com/VDHewei/xlsx-template-lib.git
+cd xlsx-template-lib
+pnpm i
+npm install -g bun
+pnpm run complie-cli # default output bin/xlsx-cli 
+# or use -o compile to user local dir
+pnpm run compile-cli -o your-path/
+```
+
 #### Commands
 
 ##### 1. Compile Command

@@ -3,14 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const {execSync} = require('child_process');
-const {startsWith} = require("lodash");
+const {find} = require("lodash");
 
 // Read version from package.json
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
 const version = packageJson.version;
 const outputDir = process.argv.filter((v, index, values) => {
     if (v === "-o" || v === "--output-dir") {
-        return !values [index + 1] && values[index + 1] !== ""
+        return !!values [index + 1] && values[index + 1] !== ""
     }
     let sv = values[index - 1];
     if (sv === "-o" || sv === "--output-dir" && !v && v !== "") {
@@ -18,16 +18,18 @@ const outputDir = process.argv.filter((v, index, values) => {
     }
     return false
 })
-const dir = outputDir.length === 0 ? "bin" : outputDir.find((s, index) => {
+const dirArg = outputDir.length === 0 ? "bin" : find(outputDir, (s, index) => {
     if (s.startsWith("-") || s.startsWith("--") || index === 0) {
         return undefined;
     }
     return s.trim();
 })
+const outputRoot = dirArg.endsWith('/') ? dirArg.substring(0, dirArg.length - 1) : dirArg;
+
 // Execute bun build command with --define
 // On Windows, we need to be careful with quotes
 // Using \\\" to escape the quotes in the command line
-const command = `bun build src/bin.ts --compile --minify --outfile ${dir}/xlsx-cli --define __VERSION__=\\\"${version}\\\"`;
+const command = `bun build src/bin.ts --compile --minify --outfile ${outputRoot}/xlsx-cli --define __VERSION__=\\\"${version}\\\"`;
 
 console.log(`Building xlsx-cli with version: ${version}`);
 console.log(`Command: ${command}`);
