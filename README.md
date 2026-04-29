@@ -233,7 +233,7 @@ Configure rendering rules in a rule sheet (e.g., `export.metadata.config`) with 
 | Rule Type | Syntax | Description |
 |:----------|:-------|:------------|
 | **alias** | `alias: @#key => use aliasKey: @# => @#` | Alias for field mapping |
-| **rowCell** | `G-AP:12=compile GenCell(...)` | Row rule configuration |
+| **rowCell** | `G-AP:12=compile:GenCell(...)` | Row rule configuration |
 | **mergeCell** | `G-AQ:13-17=sum(...)` | Merge cell calculation |
 | **cell** | `D-7=@#[@D.MY]` | Single cell value assignment |
 
@@ -278,8 +278,8 @@ Configure row rules to assign values to cell ranges. Multiple rowCell configurat
 
 | Rule | Description |
 |:-----|:------------|
-| `G-AP:12=compile GenCell(@#item,[compile Macro]#index@0)` | Assign generated values to row 12, columns G-AP |
-| `A-Z:5=compile Macro(@#data,2,5,!!codeKey)` | Assign formatted cell value to row 5, columns A-Z |
+| `G-AP:12=compile:GenCell(@#item,[compile:Macro]#index@0)` | Assign generated values to row 12, columns G-AP |
+| `A-Z:5=compile:Macro(@#data,2,5,!!codeKey)` | Assign formatted cell value to row 5, columns A-Z |
 
 #### MergeCell Rules
 
@@ -445,14 +445,14 @@ Format macro output using special formatters starting with `!!`:
 **Example 1: Generate CodeKey with Row Cell**
 
 ```
-Rule: G-AQ:117=compile GenCell(#LT[compile Macro]#err@F118[#codeKey],[compile Macro]#index@0)
+Rule: G-AQ:117=compile:GenCell(#LT[compile:Macro]#err@F118[#codeKey],[compile:Macro]#index@0)
 Result: errValue·1, errValue·2, errValue·3, ...
 ```
 
 **Example 2: Format Cell Value with CodeKey**
 
 ```
-Rule: D-7=compile Macro(@#[@D.MY],5,7,!!codeKey)
+Rule: D-7=compile:Macro(@#[@D.MY],5,7,!!codeKey)
 If cell(5,7) = "project-alpha-2024"
 Result: PROJECT_ALPHA_2024
 ```
@@ -460,7 +460,7 @@ Result: PROJECT_ALPHA_2024
 **Example 3: Generate CodeKeyAlias**
 
 ```
-Rule: cell F-10=compile Macro(@#key,3,10,!!codeKeyAlias)
+Rule: cell F-10=compile:Macro(@#key,3,10,!!codeKeyAlias)
 If cell(3,10) = "test..data"
 Result: @TEST_DATA
 ```
@@ -468,11 +468,11 @@ Result: @TEST_DATA
 **Example 4: Number Conversion**
 
 ```
-Rule: row-5=compile Macro(@#value,2,5,!!number)
+Rule: row-5=compile:Macro(@#value,2,5,!!number)
 If cell(2,5) = "42"
 Result: 42
 
-Rule: row-6=compile Macro(@#hex,4,6,!!number)
+Rule: row-6=compile:Macro(@#hex,4,6,!!number)
 If cell(4,6) = "0x1A"
 Result: 26
 ```
@@ -496,8 +496,8 @@ LLR=exportData.LRR
 CTR=contract.contractCode
 
 # RowCell Rules (assign values to cell ranges)
-G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
-A-Z:5=compile Macro(@#data,2,5,!!codeKey)
+G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)
+A-Z:5=compile:Macro(@#data,2,5,!!codeKey)
 
 # MergeCell Rules (merge cells and apply calculations)
 G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
@@ -826,7 +826,7 @@ xlsx-cli rules template.xlsx -t alias -r 'T=template'
 xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
 
 # Add rowCell rule
-xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)'
+xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
 
 # Add mergeCell rule
 xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
@@ -849,7 +849,7 @@ alias T=template
 alias LLR=exportData.LRR
 cell D:7=${@T}
 cell A:1=${@LLR.value}
-rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+rowCell G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)
 mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
 ```
 
@@ -867,7 +867,7 @@ xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
 
 cell D:7=${@LLR.value}
 alias T=template
-rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+rowCell G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)
 mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
 ```
 

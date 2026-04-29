@@ -231,7 +231,7 @@ A               B
 | 规则类型 | 语法 | 说明 |
 |:---------|:-----|:-----|
 | **alias** | `alias: @#key => use aliasKey: @# => @#` | 字段别名映射 |
-| **rowCell** | `G-AP:12=compile GenCell(...)` | 行规则配置 |
+| **rowCell** | `G-AP:12=compile:GenCell(...)` | 行规则配置 |
 | **mergeCell** | `G-AQ:13-17=sum(...)` | 合并单元格计算 |
 | **cell** | `D-7=@#[@D.MY]` | 单个单元格值赋值 |
 
@@ -274,10 +274,10 @@ A               B
 
 **示例：**
 
-| 规则 | 说明 |
-|:-----|:-----|
-| `G-AP:12=compile GenCell(@#item,[compile Macro]#index@0)` | 为第 12 行的 G-AP 列赋值生成的值 |
-| `A-Z:5=compile Macro(@#data,2,5,!!codeKey)` | 为第 5 行的 A-Z 列赋值格式化后的单元格值 |
+| 规则                                                        | 说明 |
+|:----------------------------------------------------------|:-----|
+| `G-AP:12=compile:GenCell(@#item,[compile:Macro]#index@0)` | 为第 12 行的 G-AP 列赋值生成的值 |
+| `A-Z:5=compile:Macro(@#data,2,5,!!codeKey)`               | 为第 5 行的 A-Z 列赋值格式化后的单元格值 |
 
 #### MergeCell 规则
 
@@ -470,7 +470,7 @@ sub(orders,[money,food,game],1,0)
 如果 cell(2,5) = "42"
 结果: 42
 
-规则: row-6=compile Macro(expr,4,6,!!number)
+规则: row-6=compile:Macro(expr,4,6,!!number)
 如果 cell(4,6) = "0x1A"
 结果: 26
 ```
@@ -824,7 +824,7 @@ xlsx-cli rules template.xlsx -t alias -r 'T=template'
 xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}'
 
 # 添加 rowCell 规则
-xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)'
+xlsx-cli rules template.xlsx -t rowCell -r 'G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)'
 
 # 添加 mergeCell 规则
 xlsx-cli rules template.xlsx -t mergeCell -r 'G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)'
@@ -847,7 +847,7 @@ alias T=template
 alias LLR=exportData.LRR
 cell D:7=${@T}
 cell A:1=${@LLR.value}
-rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+rowCell G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)
 mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
 ```
 
@@ -865,7 +865,7 @@ xlsx-cli rules template.xlsx -t cell -r 'D:7=${@LLR.value}' -s ./output/
 
 cell D:7=${@LLR.value}
 alias T=template
-rowCell G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
+rowCell G-AQ:12=compile:GenCell(@#item,[compile:Macro]#index@0)
 mergeCell G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
 ```
 
