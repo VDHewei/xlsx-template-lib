@@ -443,14 +443,14 @@ sub(orders,[money,food,game],1,0)
 **示例 1: 使用行单元格生成 CodeKey**
 
 ```
-规则: G-AQ:117=compile GenCell(#LT[compile Macro]#err@F118[#codeKey],[compile Macro]#index@0)
+规则: G-AQ:117=compile:GenCell(#LT,compile:Macro(index),0)
 结果: errValue·1, errValue·2, errValue·3, ...
 ```
 
 **示例 2: 使用 CodeKey 格式化单元格值**
 
 ```
-规则: D-7=compile Macro(@#[@D.MY],5,7,!!codeKey)
+规则: D-7=compile:Macro(expr,5,7,!!codeKey)
 如果 cell(5,7) = "project-alpha-2024"
 结果: PROJECT_ALPHA_2024
 ```
@@ -458,7 +458,7 @@ sub(orders,[money,food,game],1,0)
 **示例 3: 生成 CodeKeyAlias**
 
 ```
-规则: cell F-10=compile Macro(@#key,3,10,!!codeKeyAlias)
+规则: cell F-10=compile:Marco(expr,3,10,!!codeKeyAlias)
 如果 cell(3,10) = "test..data"
 结果: @TEST_DATA
 ```
@@ -466,11 +466,11 @@ sub(orders,[money,food,game],1,0)
 **示例 4: 数字转换**
 
 ```
-规则: row-5=compile Macro(@#value,2,5,!!number)
+规则: row-5=compile:Macro(expr,2,5,!!number)
 如果 cell(2,5) = "42"
 结果: 42
 
-规则: row-6=compile Macro(@#hex,4,6,!!number)
+规则: row-6=compile Macro(expr,4,6,!!number)
 如果 cell(4,6) = "0x1A"
 结果: 26
 ```
@@ -478,9 +478,9 @@ sub(orders,[money,food,game],1,0)
 **示例 5: 使用 Index 迭代**
 
 ```
-第 1 行: Code-${compile:Macro(index)}  →  Code-1
-第 2 行: Code-${compile:Macro(index)}  →  Code-2
-第 3 行: Code-${compile:Macro(index)}  →  Code-3
+第 1 行: Code-compile:Macro(index)  →  Code-1
+第 2 行: Code-compile:Macro(index)  →  Code-2
+第 3 行: Code-compile:Macro(index)  →  Code-3
 ```
 
 #### 完整规则配置示例
@@ -494,8 +494,8 @@ LLR=exportData.LRR
 CTR=contract.contractCode
 
 # RowCell 规则（为单元格范围赋值）
-G-AQ:12=compile GenCell(@#item,[compile Macro]#index@0)
-A-Z:5=compile Macro(@#data,2,5,!!codeKey)
+G-AQ:12=compile:GenCell(@#item,G,compile:Macro(index),0)
+A-Z:5=compile:Macro(@#data,2,5,!!codeKey)
 
 # MergeCell 规则（合并单元格并应用计算）
 G-AQ:13-17=sum(@LT,[compile:Macro(exprArr,F,13,17,!!codeKey)],compile:Macro(index),0)
