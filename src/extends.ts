@@ -378,6 +378,26 @@ const generateCommandsXlsxTemplateWithCompile = async function <T extends JsZip.
     return w.generate(options);
 }
 
+const compileCommandsXlsxTemplate = async function (data: Buffer, values: Object, compileOptions: AutoOptions, options?: JsZip.JSZipGeneratorOptions & FullOptions): Promise<Buffer> {
+    if (compileOptions.sheetName === undefined || compileOptions.sheetName === "") {
+        compileOptions.sheetName = compileRuleSheetName;
+    }
+    const result = await ExprResolver.compile(data, compileOptions.sheetName, compileOptions);
+    if (result.errs !== undefined && result.errs.length > 0) {
+        throw result.errs[0];
+    }
+    values = autoRegisterAlias(values, result.configure);
+    result.workbook = ExprResolver.removeUnExportSheets(result.workbook, compileOptions);
+    const wb = await ExprResolver.toBuffer(result.workbook);
+    await saveCompile(compileOptions, wb);
+    const w = await Workbook.parse(wb, options);
+    w.setQueryFunctionHandler(commandExtendQuery);
+    await w.substituteAll(values);
+    await w.generate(options);
+    return wb;
+}
+
+
 const compileAll = async (buf: Buffer, compileOpts: AutoOptions, renderData?: Object): Promise<Buffer> => {
     if (compileOpts === undefined || compileOpts.sheetName === "") {
         return buf;
@@ -413,4 +433,5 @@ export {
     ArgumentValueLoader,
     generateCommandsXlsxTemplate,
     generateCommandsXlsxTemplateWithCompile,
+    compileCommandsXlsxTemplate,
 }
