@@ -11,6 +11,27 @@
 - **ZIP 支持**：批量处理 ZIP 压缩包中的多个 Excel 文件
 - **TypeScript 支持**：完整的 TypeScript 支持和类型定义
 - **CLI 工具**：提供命令行工具快速处理
+- **模块化架构**：源代码清晰组织为核心模块、类型定义、常量、配置解析、格式化、占位符和 XML 工具等独立模块
+
+## 项目结构
+
+```
+src/
+├── core/                    # 核心模块
+│   ├── workbook.ts          # 主 Workbook 类（模板解析与数据替换）
+│   ├── types.ts             # 类型定义、接口、枚举
+│   ├── constants.ts         # 常量和配置默认值
+│   ├── config-parser.ts     # 规则配置工作表解析
+│   ├── formatters.ts        # 值格式化工具
+│   ├── placeholders.ts      # 占位符提取逻辑
+│   └── xml-utils.ts         # XML 操作工具
+├── core.ts                  # Barrel 文件 — 重新导出 core/ 的公开 API
+├── extends/                 # 扩展功能
+├── helper/                  # 辅助工具
+├── biz/                     # 业务逻辑
+├── bin.ts                   # CLI 入口 (xlsx-cli)
+└── index.ts                 # 库入口
+```
 
 ## 安装
 
@@ -618,15 +639,27 @@ npm install -g @vdhewei/xlsx-template-lib
 npx @vdhewei/xlsx-template-lib <命令> [选项]
 ```
 
-或者 直接下载源码使用 Bun 将源码编译成本地二进制CLI
+或者 直接下载源码使用 Bun 将源码编译成本地二进制 CLI
+
 ```bash
+# 克隆仓库
 git clone https://github.com/VDHewei/xlsx-template-lib.git
 cd xlsx-template-lib
+
+# 安装依赖
 pnpm i
+
+# 安装 Bun （编译依赖）
 npm install -g bun
-pnpm run complie-cli # 默认编译产物在当前 bin/目录下 (windows:xlsx-cli.exe ,other:xlsx-cli  ) 
-# 或者用户指定编译输出目录 (-o 或者 --output-dir)
+
+# 编译成本地二进制
+pnpm run compile-cli
+# 输出: bin/xlsx-cli (或 bin/xlsx-cli.exe Windows 平台)
+
+# 编译到自定义目录
 pnpm run compile-cli -o your-path/
+
+# 注意：请使用 compile-cli（不是 complie-cli）
 ```
 
 #### 命令

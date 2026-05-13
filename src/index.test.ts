@@ -1,5 +1,5 @@
 import * as fs from "node:fs/promises";
-import {BufferType, generateXlsxTemplate} from './core'
+import {BufferType, generateXlsxTemplate, Workbook} from './core'
 import {assertType, describe, expect, expectTypeOf, it, Mock, vi} from 'vitest'
 import {
     AddCommand,
@@ -24,7 +24,7 @@ import {
 
 import {
     ZipXlsxTemplateApp,
-} from  './biz';
+} from './biz';
 
 async function createMockBuffer(options: {
     targetValue?: string | null;
@@ -108,6 +108,140 @@ describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
             await fs.writeFile(`./test_data/test_${new Date().valueOf()}_data.xlsx`, buffer);
         }
         expect(buffer).toBeInstanceOf(Buffer)
+    })
+
+    it('should generate a table data', async () => {
+        const data = await fs.readFile("./test_data/form_data-SD.json");
+        const values = JSON.parse(data.toString('utf-8'));
+        const xlsx = await fs.readFile("./test_data/default_template_SD.xlsx");
+        const buffer = await generateXlsxTemplate(xlsx, values, {type: BufferType.NodeBuffer});
+      // if (testEnv(BackendTest, "true")) {
+      //    await fs.writeFile(`./test_data/default_template_SD_${new Date().valueOf()}.xlsx`, buffer);
+      // }
+        expect(buffer).toBeInstanceOf(Buffer)
+        const w = await loadWorkbook(buffer);
+        expect(w).toBeInstanceOf(exceljs.Workbook);
+        const sheet = w.getWorksheet("Summary");
+        expect(sheet.getRow(4).getCell("B").value).equal("VARATEST1")
+        expect(sheet.getRow(5).getCell("B").value).equal("1992-05-09")
+        expect(sheet.getRow(6).getCell("B").value).equal("05-09")
+
+        expect(sheet.getRow(5).getCell("D").value).equal("Cloudy")
+        expect(sheet.getRow(6).getCell("D").value).equal("Cloudy")
+        expect(sheet.getRow(7).getCell("D").value).equal("1")
+
+        expect(sheet.getRow(21).getCell("A").value).equal("Instruction")
+        expect(sheet.getRow(27).getCell("A").value).equal("Comments")
+
+        expect(sheet.getRow(13).getCell("E").value).equal("Amah")
+        expect(sheet.getRow(13).getCell("G").value).equal("1")
+        expect(sheet.getRow(14).getCell("E").value).equal("Amah (Seconded to ARUP)")
+        expect(sheet.getRow(14).getCell("G").value).equal("2")
+        expect(sheet.getRow(15).getCell("E").value).equal("Assistant Construction Manager")
+        expect(sheet.getRow(15).getCell("G").value).equal("3")
+       // await fs.writeFile(`./test_data/default_template_SD_${new Date().valueOf()}.xlsx`, buffer);
+    })
+
+    it('should generate with image in cell', async () => {
+        const data = await fs.readFile("./test_data/form_data-SD.json");
+        const values = JSON.parse(data.toString('utf-8'));
+        // Create a simple template with imageincell placeholder using exceljs
+        const JsZip = (await import('jszip')).default;
+        const wb = new exceljs.Workbook();
+        const ws = wb.addWorksheet('Sheet1');
+        ws.getCell('A1').value = '${imageincell:formStatusHistories.0.actionSignatureBase64}';
+        const templateBuffer = Buffer.from(await wb.xlsx.writeBuffer());
+        const buffer = await generateXlsxTemplate(templateBuffer, values, {type: BufferType.NodeBuffer});
+        expect(buffer).toBeInstanceOf(Buffer);
+        // Verify image was embedded in the output archive
+        const zip = await JsZip.loadAsync(buffer);
+        const mediaFiles = Object.keys(zip.files).filter(f => f.startsWith('xl/media/') && !zip.files[f].dir);
+        expect(mediaFiles.length).toBeGreaterThan(0);
+        const w = await loadWorkbook(buffer);
+        expect(w).toBeInstanceOf(exceljs.Workbook);
+        const sheet = w.getWorksheet("Sheet1");
+        const cellValue = sheet.getCell("A1").value;
+        // Image is rendered via rich data metadata, not as a cell string value
+        // Cell value should NOT be the base64 string
+        expect(cellValue).not.equal(values.formStatusHistories[0].actionSignatureBase64);
+        // Verify image files exist in the archive (rich data images stored in xl/media/)
+        const zip2 = await JsZip.loadAsync(buffer);
+        const imageFiles = Object.keys(zip2.files).filter(f => f.startsWith('xl/media/') && !zip2.files[f].dir);
+        expect(imageFiles.length).toBeGreaterThan(0);
+    })
+
+    it('should fill existing rows with table data when useExistingRows is true', async () => {
+        // Create a template with a table placeholder and pre-formatted empty rows below
+        const wb = new exceljs.Workbook();
+        const ws = wb.addWorksheet('Sheet1');
+        ws.getCell('A1').value = '${table:users.name}';
+        // Pre-format 3 empty rows below the template row
+        ws.getCell('A2').value = '';
+        ws.getCell('A3').value = '';
+        ws.getCell('A4').value = '';
+        const templateBuffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+        const values = {
+            users: [
+                {name: 'Alice'},
+                {name: 'Bob'},
+                {name: 'Charlie'},
+            ]
+        };
+
+        const buffer = await generateXlsxTemplate(templateBuffer, values, {
+            type: BufferType.NodeBuffer,
+            useExistingRows: true,
+        });
+        expect(buffer).toBeInstanceOf(Buffer);
+
+        const w = await loadWorkbook(buffer);
+        const sheet = w.getWorksheet('Sheet1');
+        // Template row filled with first item
+        expect(sheet.getCell('A1').value).equal('Alice');
+        // Pre-formatted rows filled with subsequent items
+        expect(sheet.getCell('A2').value).equal('Bob');
+        expect(sheet.getCell('A3').value).equal('Charlie');
+        // Row 4 should be empty (was pre-formatted but data only has 3 items)
+        expect(sheet.getCell('A4').value === null || sheet.getCell('A4').value === '').toBeTruthy();
+        // No extra rows should be created (total should be 4, the original row count)
+        expect(sheet.rowCount).equal(4);
+    })
+
+    it('should create new rows when table data exceeds pre-formatted rows', async () => {
+        // Template has A1 placeholder and 2 pre-formatted rows
+        const wb = new exceljs.Workbook();
+        const ws = wb.addWorksheet('Sheet1');
+        ws.getCell('A1').value = '${table:users.name}';
+        ws.getCell('A2').value = '';
+        ws.getCell('A3').value = '';
+        const templateBuffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+        const values = {
+            users: [
+                {name: 'Alice'},
+                {name: 'Bob'},
+                {name: 'Charlie'},
+                {name: 'Diana'},
+                {name: 'Eve'},
+            ]
+        };
+
+        const buffer = await generateXlsxTemplate(templateBuffer, values, {
+            type: BufferType.NodeBuffer,
+            useExistingRows: true,
+        });
+        expect(buffer).toBeInstanceOf(Buffer);
+
+        const w = await loadWorkbook(buffer);
+        const sheet = w.getWorksheet('Sheet1');
+        // Template row + 2 pre-formatted rows + 2 new rows = 5
+        expect(sheet.rowCount).equal(5);
+        expect(sheet.getCell('A1').value).equal('Alice');
+        expect(sheet.getCell('A2').value).equal('Bob');
+        expect(sheet.getCell('A3').value).equal('Charlie');
+        expect(sheet.getCell('A4').value).equal('Diana');
+        expect(sheet.getCell('A5').value).equal('Eve');
     })
 })
 
@@ -292,14 +426,14 @@ describe('compileWorkSheet', {tags: ["compile"]}, () => {
 });
 
 
-describe('compileZip',{tags: ["compile"]},  ()=> {
+describe('compileZip', {tags: ["compile"]}, () => {
     it('zipCompile', async () => {
-        const fd = await  fs.readFile(`./test_data/test_lrr.zip`);
-        const processedBuffer = await ZipXlsxTemplateApp.compileTo(Buffer.from(fd),{})
+        const fd = await fs.readFile(`./test_data/test_lrr.zip`);
+        const processedBuffer = await ZipXlsxTemplateApp.compileTo(Buffer.from(fd), {})
         expectTypeOf<Buffer>(processedBuffer);
         expect(processedBuffer.length).not.equal(0, "输出结果异常")
-        if (testEnv(XlsxTest, "true","ZIP_COMPILE")) {
-            await fs.writeFile(`./test_data/test_zip_3_${new Date().valueOf()}.zip`,processedBuffer)
+        if (testEnv(XlsxTest, "true", "ZIP_COMPILE")) {
+            await fs.writeFile(`./test_data/test_zip_3_${new Date().valueOf()}.zip`, processedBuffer)
         }
     });
 })

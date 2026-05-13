@@ -13,6 +13,27 @@ A powerful XLSX template rendering library based on ExcelJS, supporting template
 - **ZIP Support**: Batch process multiple Excel files within a ZIP archive
 - **TypeScript Support**: Full TypeScript support with type definitions
 - **CLI Tool**: Command-line interface for quick processing
+- **Modular Architecture**: Cleanly organized source code with separate modules for types, constants, configuration parsing, formatting, placeholders, and XML utilities
+
+## Project Structure
+
+```
+src/
+├── core/                    # Core modules
+│   ├── workbook.ts          # Main Workbook class (template parsing & substitution)
+│   ├── types.ts             # Type definitions, interfaces, enums
+│   ├── constants.ts         # Constants and configuration defaults
+│   ├── config-parser.ts     # Rule configuration sheet parsing
+│   ├── formatters.ts        # Value formatting utilities
+│   ├── placeholders.ts      # Placeholder extraction logic
+│   └── xml-utils.ts         # XML manipulation utilities
+├── core.ts                  # Barrel file — re-exports public API from core/
+├── extends/                 # Extended functionality
+├── helper/                  # Helper utilities
+├── biz/                     # Business logic
+├── bin.ts                   # CLI entry point (xlsx-cli)
+└── index.ts                 # Library entry point
+```
 
 ## Installation
 
@@ -620,15 +641,27 @@ Or use directly from `npx`:
 npx @vdhewei/xlsx-template-lib <command> [options]
 ```
 
-Or git clone source code use bun compile to local Native CLI
+Or compile the source code to a native CLI binary using Bun:
+
 ```bash
+# Clone the repository
 git clone https://github.com/VDHewei/xlsx-template-lib.git
 cd xlsx-template-lib
+
+# Install dependencies
 pnpm i
+
+# Install Bun (required for compilation)
 npm install -g bun
-pnpm run complie-cli # default output bin/xlsx-cli 
-# or use -o compile to user local dir
+
+# Compile to native binary
+pnpm run compile-cli
+# Output: bin/xlsx-cli (or bin/xlsx-cli.exe on Windows)
+
+# Compile to a custom directory
 pnpm run compile-cli -o your-path/
+
+# Note: Use pnpm run compile-cli (not "complie-cli")
 ```
 
 #### Commands
