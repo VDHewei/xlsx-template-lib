@@ -2394,7 +2394,7 @@ export const fetchAlias = (m: Map<RuleToken, RuleValue[]> | RuleResult): Map<str
     } else {
         return alias;
     }
-    const values = sv.get(RuleToken.AliasToken);
+    const values = sv.get(RuleToken.AliasToken) || [];
     for (const vs of values) {
         if (typeof vs.value === "string") {
             alias.set(vs.key, vs.value as string);

@@ -25,7 +25,10 @@ export type CellPlaceholder = {
     Row: string;
     Column: number;
     Sheet?: string | number;
-    Value: string| exceljs.CellValue,
+    Merge?: boolean;
+    LastRow?: string;
+    LastColumn?: number;
+    Value: exceljs.CellValue,
     Placeholders: Placeholder[];
 };
 

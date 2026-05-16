@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as etree from 'elementtree';
 import JsZip from "jszip";
 import {imageSize as sizeOf} from 'image-size';
-import {isArray, parseInt, toString} from "lodash";
+import {clone, isArray, parseInt, toString} from "lodash";
 import exceljs from "exceljs";
 
 // 从新模块导入
@@ -11,7 +11,8 @@ import {
     Placeholder, Ref, Range, SheetInfo, SheetInfoMust, DrawingInfo, TableInfo, RelsInfo,
     FullOptions, OutputByType,
     CustomReplacer, CustomPlaceholderExtractor, BeforeReplaceHook, AfterReplaceHook,
-    CustomFormatter, QueryFunction, CellPlaceholder, CellData, PlaceholderCacheResult
+    CustomFormatter, QueryFunction, CellPlaceholder, CellData, PlaceholderCacheResult,
+    ImageValue,
 } from './types';
 import {
     isImageValue,
@@ -324,32 +325,64 @@ class Workbook {
         await this.updateCells(cellsWithPlaceholders, substitutions, sheet.root);
     }
 
+    private parseCellAddress(addr: string): { colLetter: string; rowNum: number } | null {
+        const match = addr.match(/^([A-Z]+)(\d+)$/i);
+        if (!match) return null;
+        return { colLetter: match[1], rowNum: parseInt(match[2], 10) };
+    }
+
     async scanSheetPlaceholder(sheet?: exceljs.Worksheet): Promise<CellPlaceholder[]> {
         const list: CellPlaceholder[] = [];
         const cached = new Map<string, boolean>();
         const worksheet = !sheet ? this.sheet.root : sheet;
-        for (const row of worksheet.getRows(1, sheet.rowCount)) {
+        for (const row of worksheet.getRows(1, worksheet.rowCount)) {
             const columns = row.cellCount;
-            for (let i = 1; i < columns; i++) {
+            for (let i = 1; i <= columns; i++) {
                 let cell = row.getCell(i);
+                // 合并单元格，只处理第一个单元格
                 let addr = cell.isMerged ? cell.master.address : cell.address;
+                // 确保 addr 为字符串
+                addr = String(addr);
+                // 判断是否已经处理过的单元格
                 if (cached.has(addr)) {
                     continue;
                 }
-                let text = !cell.text ? cell.value : cell.text;
+                // 获取单元格值
+                let text = !cell.text && cell.text !== '' ? cell.value : cell.text;
+                // 记录单元格地址已经被处理过
                 cached.set(addr, true);
-                let pls: Placeholder[] | undefined = this.extractPlaceholders(text as string);
+                // 提取占位符
+                let pls: Placeholder[] | undefined = this.extractPlaceholders(String(text ?? ''));
                 if (!pls || pls.length <= 0) {
                     continue;
                 }
-                const [_row, _column] = addr.split(":");
+                // 解析地址为行号和列号
+                const parsed = this.parseCellAddress(addr);
+                if (!parsed) {
+                    continue;
+                }
+                // 创建 CellPlaceholder 对象（Row 存行号，Column 存列号）
                 const cellValue: CellPlaceholder = {
-                    Row: _row,
-                    Value: text,
+                    Row: String(parsed.rowNum),
+                    Value: text as exceljs.CellValue,
                     Placeholders: pls,
                     Sheet: worksheet.name,
-                    Column: parseInt(_column, 10),
+                    Column: parsed.colLetter.charCodeAt(0) - 'A'.charCodeAt(0) + 1,
                 };
+                // 合并单元格，获取/推算最后一个单元格地址
+                if (cell.isMerged) {
+                    cellValue.Merge = true;
+                    // 获取合并单元格的最后一个单元格
+                    const lastCell = (cell.master as any).lastCell;
+                    if (lastCell) {
+                        const lastAddr = String(lastCell.address);
+                        const lastParsed = this.parseCellAddress(lastAddr);
+                        if (lastParsed) {
+                            cellValue.LastRow = String(lastParsed.rowNum);
+                            cellValue.LastColumn = lastParsed.colLetter.charCodeAt(0) - 'A'.charCodeAt(0) + 1;
+                        }
+                    }
+                }
                 list.push(cellValue);
             }
         }
@@ -381,17 +414,48 @@ class Workbook {
             // ${table:xxx.xxx}|${table:xxx.xx2}
             // ${prefix}.${table:xxx.name}
             // ${table:xxx.age}
+            // 表格/数组 生成需要处理的单元格(行列)
             items = await this.generateCells(cell, substitutions, loopIndex);
         } else {
-            // ${user.name}
-            // ${image:xxx.png}
-            // ${xxx.logo}
-            let result: CellData = {
-                Row: cell.Row,
-                Column: cell.Column,
-                Value: await this.resolverPlaceholders(cell, substitutions),
-            };
-            items.push(result);
+            // 检测 image / imageincell 占位符 — 需要特殊处理
+            const imgPlaceholder = cell.Placeholders.find(
+                p => p.type === 'imageincell' || p.type === 'image'
+            );
+            if (imgPlaceholder && imgPlaceholder.full) {
+                const substitution = this.getSubstitution(imgPlaceholder, substitutions);
+                if (substitution !== undefined && substitution !== null && substitution !== '') {
+                    // 构建 ImageValue 供 safeUpdate / updateImageCell 使用
+                    const imgValue: ImageValue = {
+                        imageType: 'base64',
+                        buffer: typeof substitution === 'string'
+                            ? Buffer.from(substitution, 'base64')
+                            : (substitution instanceof Buffer ? substitution : undefined),
+                        path: typeof substitution === 'string' ? substitution : undefined,
+                    };
+                    items.push({
+                        Row: cell.Row,
+                        Column: cell.Column,
+                        Value: imgValue as any,
+                    });
+                } else {
+                    // 无图片数据：清空单元格
+                    items.push({
+                        Row: cell.Row,
+                        Column: cell.Column,
+                        Value: '',
+                    });
+                }
+            } else {
+                // ${user.name}
+                // ${xxx.logo}
+                // 单个单元格值处理解析
+                let result: CellData = {
+                    Row: cell.Row,
+                    Column: cell.Column,
+                    Value: await this.resolverPlaceholders(cell, substitutions),
+                };
+                items.push(result);
+            }
         }
         return items;
     }
@@ -399,18 +463,20 @@ class Workbook {
     async setCells(workSheet: exceljs.Worksheet, values: CellData[]): Promise<void> {
         for (const cell of values) {
             const cellRef = workSheet.getCell(cell.Row, cell.Column);
-            await this.safeUpdate(cellRef, cell.Value,workSheet);
+            await this.safeUpdate(cellRef, cell.Value,workSheet,this.workbook);
         }
     }
 
-    public async safeUpdate(cellRef: exceljs.Cell, value: any,workSheet:exceljs.Worksheet): Promise<exceljs.CellValue> {
+    public async safeUpdate(cellRef: exceljs.Cell, value: any,workSheet:exceljs.Worksheet,w:exceljs.Workbook): Promise<exceljs.CellValue> {
+        // 无论单元各类型，先检查是否图片值
+        if (isImageValue(value)) {
+            await updateImageCell(cellRef, value, workSheet, w);
+            return cellRef.value;
+        }
+
         const style = cellRef.style ? JSON.parse(JSON.stringify(cellRef.style)) : {};
         switch (cellRef.type) {
             case exceljs.ValueType.Null:
-                if(isImageValue(value)){
-                    await  updateImageCell(cellRef,value,workSheet)
-                    return cellRef.value
-                }
                 cellRef.value = value;
                 break;
             case exceljs.ValueType.Date:
@@ -430,12 +496,11 @@ class Workbook {
                 break;
             case exceljs.ValueType.Merge:
             case exceljs.ValueType.String:
-                cellRef.value = toString(value);
-                break;
             case exceljs.ValueType.SharedString:
                 cellRef.value = toString(value);
                 break;
             default:
+                cellRef.value = value;
                 break;
         }
         cellRef.style = style;
@@ -451,14 +516,92 @@ class Workbook {
         return value;
     }
 
-    private async generateCells(cell: CellPlaceholder, substitutions: Record<string, any>, loopIndex: number): Promise<CellData[]> {
+    /**
+     * 解析表格/数组占位符，将数组数据展开为 CellData 列表
+     * @param cell - 包含 table 类型占位符的 CellPlaceholder
+     * @param substitutions - 数据源对象
+     * @returns Map<行偏移, CellData[]> 每个键对应一行数据
+     */
+    private parseSubstitutionsArray(cell: CellPlaceholder, substitutions: Record<string, any>): Map<number, CellData[]> {
+        const result = new Map<number, CellData[]>();
+        const tablePlaceholders = cell.Placeholders.filter(p => p.type === 'table');
+        if (tablePlaceholders.length === 0) return result;
 
-        return [];
+        // 获取第一个 table 占位符对应的数组数据
+        const first = tablePlaceholders[0];
+        const arrayData = this.getSubstitution(first, substitutions);
+        const dataArray: any[] = Array.isArray(arrayData) ? arrayData : [];
+        if (dataArray.length === 0) return result;
+
+        // 为数组的每个元素生成一行 CellData
+        for (let i = 0; i < dataArray.length; i++) {
+            const items: CellData[] = [];
+            for (const p of tablePlaceholders) {
+                const item = dataArray[i];
+                let value: any;
+                if (p.key && item !== null && item !== undefined) {
+                    // 如果 item 是对象，按 key 取值；否则（简单类型）直接使用 item
+                    value = typeof item === 'object' && !Array.isArray(item)
+                        ? (item as any)[p.key]
+                        : item;
+                } else {
+                    value = item;
+                }
+                value = value !== undefined && value !== null ? value : '';
+                items.push({
+                    Row: cell.Row,
+                    Column: cell.Column,
+                    Value: value,
+                });
+            }
+            result.set(i, items);
+        }
+        return result;
+    }
+
+    private async generateCells(cell: CellPlaceholder, substitutions: Record<string, any>, loopIndex: number): Promise<CellData[]> {
+        const loopArray = this.parseSubstitutionsArray(cell, substitutions);
+        if (!loopArray || loopArray.size <= 0) {
+            return [];
+        }
+
+        const result: CellData[] = [];
+        const baseRow = typeof cell.Row === 'number' ? cell.Row : parseInt(String(cell.Row), 10);
+        if (isNaN(baseRow)) return result;
+
+        for (const [index, values] of loopArray.entries()) {
+            // 取该行第一个 CellData 的值作为当前行的 table 数据
+            const cellData = values.length > 0 ? values[0] : null;
+            const rowData = cellData ? cellData.Value : '';
+
+            // 将原始占位符文本中的 table 和非 table 占位符都替换为实际数据
+            let textValue: any = cell.Value;
+            for (const p of cell.Placeholders) {
+                if (p.type === 'table') {
+                    textValue = await this.replaceCellValue(textValue, p.placeholder, rowData);
+                } else {
+                    const substitution = this.getSubstitution(p, substitutions);
+                    textValue = await this.replaceCellValue(textValue, p.placeholder, substitution);
+                }
+            }
+            result.push({
+                Row: baseRow + index,
+                Column: cell.Column,
+                Value: textValue,
+            });
+        }
+        return result;
     }
 
     private async replaceCellValue(value: exceljs.CellValue, placeholder: string, newValue: any | undefined): Promise<exceljs.CellValue> {
-
-        return value;
+        if (newValue === undefined || newValue === null) return value;
+        if (typeof value === 'string') {
+            if (value === placeholder) {
+                return newValue;
+            }
+            return value.replace(placeholder, String(newValue));
+        }
+        return newValue;
     }
 
     substituteString(value: string, placeholders: Placeholder[], substitutions: Record<string, any>): string {
@@ -579,88 +722,7 @@ class Workbook {
         return updatedInserted;
     }
 
-    /**
-     * 处理 useExistingRows 模式下溢出的表格行，插入到最后一个被消费的行之后
-     * 从 substitute() 中拆分出的子方法
-     * @param overflowTableRows - 溢出的表格行数组
-     * @param rows - 所有行的数组
-     * @param totalRowsInserted - 已插入的累计行数
-     * @param namedTables - 命名表格列表
-     * @param sheet - 当前工作表信息
-     * @param consumedRowNumbers - 已消费的行号集合
-     * @param currentRow - 当前处理的行号
-     * @returns 更新后的总插入行数
-     */
-    private _insertOverflowRows(
-        overflowTableRows: any[],
-        rows: any[],
-        totalRowsInserted: number,
-        namedTables: TableInfo[],
-        sheet: SheetInfoMust,
-        consumedRowNumbers: Set<number>,
-        currentRow: number | null
-    ): number {
-        const overflowCount = overflowTableRows.length;
-        let insertAfterRow = 0;
-        if (consumedRowNumbers.size > 0) {
-            consumedRowNumbers.forEach(n => {
-                if (n > insertAfterRow) insertAfterRow = n;
-            });
-        } else if (currentRow) {
-            insertAfterRow = currentRow;
-        }
-        const sheetCellMap = this._cellValueMap.get(sheet.name);
-        // 更新溢出行及其单元格的引用编号，同时同步 _cellValueMap 中的键
-        for (let i = 0; i < overflowTableRows.length; i++) {
-            const overflowRow = overflowTableRows[i];
-            const overflowRowNum = insertAfterRow + 1 + i;
-            overflowRow.attrib.r = `${overflowRowNum}`;
-            overflowRow.findall("c").forEach((c: any) => {
-                const oldRef = c.attrib.r;
-                const newRef = this.joinRef({
-                    row: overflowRowNum,
-                    col: this.splitRef(oldRef).col
-                });
-                c.attrib.r = newRef;
-                // 同步更新 _cellValueMap 中的键（溢出行在 _createNewTableRow
-                // 中使用临时行号创建，需要更新为正确的最终引用）
-                if (sheetCellMap && sheetCellMap.has(oldRef)) {
-                    const val = sheetCellMap.get(oldRef);
-                    sheetCellMap.delete(oldRef);
-                    sheetCellMap.set(newRef, val);
-                }
-            });
-        }
-        // 在正确位置插入溢出行
-        let insertIdx = rows.findIndex(r => parseInt(r.attrib.r, 10) === insertAfterRow);
-        if (insertIdx < 0) {
-            insertIdx = rows.length - 1;
-        }
-        rows.splice(insertIdx + 1, 0, ...overflowTableRows);
-        // 更新后续行的编号，同时同步 _cellValueMap 中的键
-        for (let i = insertIdx + 1 + overflowCount; i < rows.length; i++) {
-            const r = rows[i];
-            const oldNum = parseInt(r.attrib.r, 10);
-            const newNum = oldNum + overflowCount;
-            r.attrib.r = `${newNum}`;
-            r.findall("c").forEach((c: any) => {
-                const oldRef = c.attrib.r;
-                const newRef = this.joinRef({
-                    row: newNum,
-                    col: this.splitRef(oldRef).col
-                });
-                c.attrib.r = newRef;
-                // 同步更新 _cellValueMap（后续行号被推挤后需要更新为新的引用）
-                if (sheetCellMap && sheetCellMap.has(oldRef)) {
-                    const val = sheetCellMap.get(oldRef);
-                    sheetCellMap.delete(oldRef);
-                    sheetCellMap.set(newRef, val);
-                }
-            });
-        }
-        this.pushDown(this.workbook, sheet.root, namedTables, insertAfterRow, overflowCount);
-        return totalRowsInserted + overflowCount;
-    }
+
 
     /**
      * 处理单个单元格 - 提取占位符并执行替换
@@ -956,7 +1018,16 @@ class Workbook {
      * @returns 生成的输出数据
      */
     async generate<T extends JsZip.OutputType>(options?: JsZip.JSZipGeneratorOptions<T>): Promise<OutputByType[T]> {
-        return await this.archive.generateAsync(options);
+        // ExcelJS path: use workbook.writeBuffer (preferred, preserves styles)
+        if (this.workbook) {
+            const buffer = await this.workbook.xlsx.writeBuffer();
+            return buffer as OutputByType[T];
+        }
+        // Fallback: JSZip path (XML-level manipulation)
+        if (this.archive) {
+            return await this.archive.generateAsync(options);
+        }
+        throw new Error('No workbook or archive loaded');
     }
 
     /**
