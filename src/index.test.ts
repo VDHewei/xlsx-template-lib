@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
-import {BufferType, generateXlsxTemplate, Workbook} from './core'
-import {assertType, describe, expect, expectTypeOf, it, Mock, vi} from 'vitest'
+import { constants } from "node:fs";
+import { BufferType, generateXlsxTemplate, Workbook } from './core'
+import { assertType, describe, expect, expectTypeOf, it, Mock, vi } from 'vitest'
 import {
     AddCommand,
     Argument,
@@ -25,6 +26,15 @@ import {
 import {
     ZipXlsxTemplateApp,
 } from './biz';
+
+async function fileExists(path: string): Promise<boolean> {
+    try {
+        await fs.access(path, constants.F_OK);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 async function createMockBuffer(options: {
     targetValue?: string | null;
@@ -80,7 +90,7 @@ const XlsxTest = Symbol(`VITE_SAVE_XLSX_TEST`);
 const BackendTest = Symbol(`VITE_SAVA_BACKEND_TEST`);
 const CompileTest = Symbol(`VITE_SAVE_COMPILE_XLSX_TEST`);
 
-describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
+describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
     it('should generate a template', async () => {
         // 创建内联模板（无需外部测试文件）
         const wb = new exceljs.Workbook();
@@ -122,35 +132,58 @@ describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
 
     it('should generate a table data', async () => {
         // 创建内联模板：多列表格数据
-        const wb = new exceljs.Workbook();
-        const ws = wb.addWorksheet('Summary');
-        ws.getCell('B4').value = '${name}';
-        ws.getCell('B5').value = '${birthDate}';
-        ws.getCell('B6').value = '${shortDate}';
-        ws.getCell('D5').value = '${weather}';
-        ws.getCell('D6').value = '${weather}';
-        ws.getCell('D7').value = '${count}';
-        ws.getCell('A21').value = '${label21}';
-        ws.getCell('A27').value = '${label27}';
-        // 表格行：${table:items.title} 和 ${table:items.num}
-        ws.getCell('E13').value = '${table:items.title}';
-        ws.getCell('G13').value = '${table:items.num}';
+        // 判断 test_data 文件夹是否存在，不存在则创建
+        let wb: exceljs.Workbook;
+        await fs.mkdir('./test_data', { recursive: true });
+        //判断 test_data/default_template_SD.xlsx 是否存在，存在则加载 exceljs.Workbook 对象
+        const templatePath = './test_data/default_template_SD.xlsx';
+        const templateDataPath = './test_data/form_data-SD.json';
+        const newFile = `./test_data/default_template_${new Date().valueOf()}_SD.xlsx`;
+        if (await fileExists(templatePath)) {
+            const templateBuffer = await fs.readFile(templatePath);
+            wb = await loadWorkbook(templateBuffer);
+        } else {
+            // 不存在则创建一个新的模板文件
+            wb = new exceljs.Workbook();
+            const ws = wb.addWorksheet('Summary');
+            ws.getCell('B4').value = '${name}';
+            ws.getCell('B5').value = '${birthDate}';
+            ws.getCell('B6').value = '${shortDate}';
+            ws.getCell('D5').value = '${weather}';
+            ws.getCell('D6').value = '${weather}';
+            ws.getCell('D7').value = '${count}';
+            ws.getCell('A21').value = '${label21}';
+            ws.getCell('A27').value = '${label27}';
+            // 表格行：${table:items.title} 和 ${table:items.num}
+            ws.getCell('E13').value = '${table:items.title}';
+            ws.getCell('G13').value = '${table:items.num}';
+
+        }
+
         const xlsx = Buffer.from(await wb.xlsx.writeBuffer());
-        const values = {
-            name: 'VARATEST1',
-            birthDate: '1992-05-09',
-            shortDate: '05-09',
-            weather: 'Cloudy',
-            count: '1',
-            label21: 'Instruction',
-            label27: 'Comments',
-            items: [
-                { title: 'Amah', num: '1' },
-                { title: 'Amah (Seconded to ARUP)', num: '2' },
-                { title: 'Assistant Construction Manager', num: '3' },
-            ],
-        };
+        let values: Record<string, any> = {};
+        if (await fileExists(templateDataPath)) {
+            const templateData = await fs.readFile(templateDataPath, 'utf-8');
+            values = JSON.parse(templateData);
+        } else {
+            values = {
+                name: 'VARATEST1',
+                birthDate: '1992-05-09',
+                shortDate: '05-09',
+                weather: 'Cloudy',
+                count: '1',
+                label21: 'Instruction',
+                label27: 'Comments',
+                items: [
+                    { title: 'Amah', num: '1' },
+                    { title: 'Amah (Seconded to ARUP)', num: '2' },
+                    { title: 'Assistant Construction Manager', num: '3' },
+                ],
+            };
+        }
+
         const buffer = await generateXlsxTemplate(xlsx, values, { type: BufferType.NodeBuffer });
+        await fs.writeFile(newFile, buffer);
         expect(buffer).toBeInstanceOf(Buffer);
         const w = await loadWorkbook(buffer);
         expect(w).toBeInstanceOf(exceljs.Workbook);
@@ -215,9 +248,9 @@ describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
 
         const values = {
             users: [
-                {name: 'Alice'},
-                {name: 'Bob'},
-                {name: 'Charlie'},
+                { name: 'Alice' },
+                { name: 'Bob' },
+                { name: 'Charlie' },
             ]
         };
 
@@ -251,11 +284,11 @@ describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
 
         const values = {
             users: [
-                {name: 'Alice'},
-                {name: 'Bob'},
-                {name: 'Charlie'},
-                {name: 'Diana'},
-                {name: 'Eve'},
+                { name: 'Alice' },
+                { name: 'Bob' },
+                { name: 'Charlie' },
+                { name: 'Diana' },
+                { name: 'Eve' },
             ]
         };
 
@@ -277,7 +310,7 @@ describe('generateXlsxTemplate', {tags: ["backend"]}, () => {
     })
 })
 
-describe('generateCommandsXlsxTemplate', {tags: ["backend"]}, () => {
+describe('generateCommandsXlsxTemplate', { tags: ["backend"] }, () => {
     it('should generate a template', async () => {
         // 创建内联模板
         const wb = new exceljs.Workbook();
@@ -345,12 +378,12 @@ describe('generateCommandsXlsxTemplate', {tags: ["backend"]}, () => {
     });
 })
 
-describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
+describe('scanCellSetPlaceholder', { tags: ["backend", "xlsx"] }, () => {
 
     it('未合并且空单元格时调用toString', async () => {
-        const buffer = await createMockBuffer({targetValue: null});
-        const {placeholder, spyToString, spyMerge} = getPlaceholder();
-        const res = await scanCellSetPlaceholder(buffer, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
+        const buffer = await createMockBuffer({ targetValue: null });
+        const { placeholder, spyToString, spyMerge } = getPlaceholder();
+        const res = await scanCellSetPlaceholder(buffer, { Row: 'B', Column: 2, Sheet: "Sheet1" }, placeholder);
         expectTypeOf<ArrayBuffer>(res);
         expect(res.byteLength).not.equal(0, "输出结果异常")
         if (testEnv(XlsxTest, "true")) {
@@ -362,9 +395,9 @@ describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
     });
 
     it('未合并且非空单元格时不调用任何方法', async () => {
-        const buffer = await createMockBuffer({targetValue: 'Existing Data'});
-        const {placeholder, spyToString, spyMerge} = getPlaceholder();
-        const res = await scanCellSetPlaceholder(buffer, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
+        const buffer = await createMockBuffer({ targetValue: 'Existing Data' });
+        const { placeholder, spyToString, spyMerge } = getPlaceholder();
+        const res = await scanCellSetPlaceholder(buffer, { Row: 'B', Column: 2, Sheet: "Sheet1" }, placeholder);
         expectTypeOf<ArrayBuffer>(res);
         expect(res.byteLength).not.equal(0, "输出结果异常")
         if (testEnv(XlsxTest, "true")) {
@@ -375,9 +408,9 @@ describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
     });
 
     it('合并单元格且左侧全空时调用toString', async () => {
-        const buffer = await createMockBuffer({merged: true, leftValues: [null, null, null]});
-        const {placeholder, spyToString, spyMerge} = getPlaceholder();
-        const res = await scanCellSetPlaceholder(buffer, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
+        const buffer = await createMockBuffer({ merged: true, leftValues: [null, null, null] });
+        const { placeholder, spyToString, spyMerge } = getPlaceholder();
+        const res = await scanCellSetPlaceholder(buffer, { Row: 'B', Column: 2, Sheet: "Sheet1" }, placeholder);
         expectTypeOf<ArrayBuffer>(res);
         expect(res.byteLength).not.equal(0, "输出结果异常")
         if (testEnv(XlsxTest, "true")) {
@@ -388,9 +421,9 @@ describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
     });
 
     it('合并单元格且左侧非全空时调用 mergeCell 并传入过滤后的数组', async () => {
-        const buffer = await createMockBuffer({merged: true, leftValues: ['Val1', null, 'Val2', '']});
-        const {placeholder, spyToString, spyMerge} = getPlaceholder();
-        const res = await scanCellSetPlaceholder(buffer, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
+        const buffer = await createMockBuffer({ merged: true, leftValues: ['Val1', null, 'Val2', ''] });
+        const { placeholder, spyToString, spyMerge } = getPlaceholder();
+        const res = await scanCellSetPlaceholder(buffer, { Row: 'B', Column: 2, Sheet: "Sheet1" }, placeholder);
         expectTypeOf<ArrayBuffer>(res);
         expect(res.byteLength).not.equal(0, "输出结果异常")
         if (testEnv(XlsxTest, "true")) {
@@ -401,11 +434,11 @@ describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
     });
 
     it('支持 base64 字符串入参', async () => {
-        const buffer = await createMockBuffer({targetValue: null});
+        const buffer = await createMockBuffer({ targetValue: null });
         const base64Str = buffer.toString('base64');
         const placeholder = new DefaultPlaceholderCellValue('{{P}}', 'M: ?');
         const spyToString = vi.spyOn(placeholder, 'toString');
-        const res = await scanCellSetPlaceholder(base64Str, {Row: 'B', Column: 2, Sheet: "Sheet1"}, placeholder);
+        const res = await scanCellSetPlaceholder(base64Str, { Row: 'B', Column: 2, Sheet: "Sheet1" }, placeholder);
         expectTypeOf<ArrayBuffer>(res);
         expect(res.byteLength).not.equal(0, "输出结果异常")
         if (testEnv(XlsxTest, "true")) {
@@ -416,7 +449,7 @@ describe('scanCellSetPlaceholder', {tags: ["backend", "xlsx"]}, () => {
 
 });
 
-describe('compileWorkSheet', {tags: ["compile"]}, () => {
+describe('compileWorkSheet', { tags: ["compile"] }, () => {
     it('parse-rules-only', async () => {
         // 创建包含规则配置的测试工作表
         const wb = new exceljs.Workbook();
@@ -470,7 +503,7 @@ describe('compileWorkSheet', {tags: ["compile"]}, () => {
 });
 
 
-describe('compileZip', {tags: ["compile"]}, () => {
+describe('compileZip', { tags: ["compile"] }, () => {
     it('zipCompile', async () => {
         // 创建内联 zip 包含一个 xlsx 文件
         const AdmZip = (await import('adm-zip')).default;

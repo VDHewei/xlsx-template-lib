@@ -141,7 +141,7 @@ const updateImageCell = async function (v: exceljs.Cell, newValue: any, sheet: e
     } catch { /* use default */ }
 
     const imgId = w.addImage({
-        buffer: imageBuffer,
+        buffer: imageBuffer as any,
         extension: ext,
     });
 
@@ -157,7 +157,7 @@ const updateImageCell = async function (v: exceljs.Cell, newValue: any, sheet: e
         tl: { col: cellCol - 1, row: cellRow - 1 },
         ext: { width: Math.round(wd * zoom), height: Math.round(ht * zoom) },
     });
-
+    v.value = undefined; // 清除单元格原有值
     return true;
 }
 
