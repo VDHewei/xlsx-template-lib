@@ -115,6 +115,26 @@ const updateHyperlinkCell = function (v: exceljs.CellValue, newValue: any): exce
     return v;
 }
 
+/**
+ * Excel 列宽（字符单位）→ 像素
+ * 近似：1 字符宽度 ≈ 7.5 像素（默认字体 Calibri 11）
+ */
+const colWidthToPixels = function (width: number): number {
+    return Math.round(width * 7.5);
+};
+
+/**
+ * Excel 行高（磅/点）→ 像素
+ * 1pt = 96/72 = 1.333 像素
+ */
+const rowHeightToPixels = function (height: number): number {
+    return Math.round(height * 1.333);
+};
+
+/**
+ * 更新/替换单元格为图片
+ * 自动适配单元格或合并单元格区域尺寸
+ */
 const updateImageCell = async function (v: exceljs.Cell, newValue: any, sheet: exceljs.Worksheet, w: exceljs.Workbook): Promise<boolean> {
     const val = newValue as ImageValue;
     if (!val || !val.imageType) return false;
@@ -132,32 +152,66 @@ const updateImageCell = async function (v: exceljs.Cell, newValue: any, sheet: e
         return false;
     }
 
-    let ext: 'png' | 'jpeg' | 'gif' = 'png';
+    let imgExt: 'png' | 'jpeg' | 'gif' = 'png';
     try {
         const dim = sizeOf(imageBuffer);
         if (dim.type === 'png' || dim.type === 'jpeg' || dim.type === 'gif') {
-            ext = dim.type;
+            imgExt = dim.type;
         }
     } catch { /* use default */ }
 
     const imgId = w.addImage({
         buffer: imageBuffer as any,
-        extension: ext,
+        extension: imgExt,
     });
 
-    // 从 Cell 对象获取 0-based 的行列索引
+    // 获取单元格行列（1-based）
     const cellRow = (v as any).row as number ?? 1;
     const cellCol = (v as any).col as number ?? 1;
 
-    const wd = val.width || 200;
-    const ht = val.height || 200;
+    // 计算单元格/合并区域尺寸
+    let totalWidth = val.width || 0;
+    let totalHeight = val.height || 0;
+    if (totalWidth === 0 || totalHeight === 0) {
+        let startRow = cellRow, endRow = cellRow;
+        let startCol = cellCol, endCol = cellCol;
+
+        // 合并单元格：获取合并范围
+        if (v.isMerged) {
+            const masterAddr = v.master.address;
+            const mergeInfo = (sheet as any)._merges?.[masterAddr];
+            if (mergeInfo?.model) {
+                const m = mergeInfo.model;
+                startRow = m.top;
+                startCol = m.left;
+                endRow = m.bottom;
+                endCol = m.right;
+            }
+        }
+
+        // 累加行高
+        if (totalHeight === 0) {
+            for (let r = startRow; r <= endRow; r++) {
+                const row = sheet.getRow(r);
+                totalHeight += rowHeightToPixels(row?.height ?? 15);
+            }
+        }
+        // 累加列宽
+        if (totalWidth === 0) {
+            for (let c = startCol; c <= endCol; c++) {
+                const col = sheet.getColumn(c);
+                totalWidth += colWidthToPixels(col?.width ?? 8.43);
+            }
+        }
+    }
+
     const zoom = val.zoom || 1;
 
     sheet.addImage(imgId, {
         tl: { col: cellCol - 1, row: cellRow - 1 },
-        ext: { width: Math.round(wd * zoom), height: Math.round(ht * zoom) },
+        ext: { width: Math.round((totalWidth || 200) * zoom), height: Math.round((totalHeight || 200) * zoom) },
     });
-    v.value = undefined; // 清除单元格原有值
+    v.value = undefined; // 清除单元格原有值（图片覆盖单元格）
     return true;
 }
 

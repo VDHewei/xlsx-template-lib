@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import { constants } from "node:fs";
-import { BufferType, generateXlsxTemplate, Workbook } from './core'
+import {BufferType, generateXlsxTemplate, valueDotGet, Workbook} from './core'
 import { assertType, describe, expect, expectTypeOf, it, Mock, vi } from 'vitest'
 import {
     AddCommand,
@@ -35,6 +35,34 @@ async function fileExists(path: string): Promise<boolean> {
         return false;
     }
 }
+
+const formStatusImage: CmdFunction = (values: Object | Record<string, any>, argument: Argument): any | undefined => {
+    const histories = valueDotGet(values, argument.root);
+    const statusesData = valueDotGet(values, argument.groups[0] || '');
+    const matchField = argument.groups[1]?.replace(/^"|"$/g, '');
+    const matchValue = argument.groups[2]?.replace(/^"|"$/g, '');
+
+    if (!Array.isArray(histories) || !matchValue) return undefined;
+
+    // 从 formStatuses 中查找 identifier
+    let identifier: string | undefined;
+    if (statusesData && typeof statusesData === 'object') {
+        if (statusesData[matchValue] != null) {
+            identifier = typeof statusesData[matchValue] === 'object'
+                ? statusesData[matchValue].identifier
+                : statusesData[matchValue];
+        } else if (Array.isArray(statusesData)) {
+            const found = statusesData.find((s: any) => s[matchField] === matchValue);
+            if (found) identifier = found.identifier;
+        }
+    }
+    if (!identifier) return undefined;
+
+    // 过滤 formStatusHistories 中匹配 identifier 的条目，返回最后一条的签名图片
+    const matched = histories.filter((h: any) => h.formStatusIdentifier === identifier);
+    if (matched.length === 0) return undefined;
+    return matched[matched.length - 1].actionSignatureBase64;
+};
 
 async function createMockBuffer(options: {
     targetValue?: string | null;
@@ -91,6 +119,7 @@ const BackendTest = Symbol(`VITE_SAVA_BACKEND_TEST`);
 const CompileTest = Symbol(`VITE_SAVE_COMPILE_XLSX_TEST`);
 
 describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
+    AddCommand("formStatusImage",formStatusImage);
     it('should generate a template', async () => {
         // 创建内联模板（无需外部测试文件）
         const wb = new exceljs.Workbook();
@@ -199,11 +228,11 @@ describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
         expect(sheet.getRow(21).getCell('A').value).equal('Instruction');
         expect(sheet.getRow(27).getCell('A').value).equal('Comments');
 
-        expect(sheet.getRow(13).getCell('E').value).equal('Amah');
+        expect(sheet.getRow(13).getCell('E').value).equal('Amah.1');
         expect(sheet.getRow(13).getCell('G').value).equal('1');
-        expect(sheet.getRow(14).getCell('E').value).equal('Amah (Seconded to ARUP)');
+        expect(sheet.getRow(14).getCell('E').value).equal('Amah (Seconded to ARUP).2');
         expect(sheet.getRow(14).getCell('G').value).equal('2');
-        expect(sheet.getRow(15).getCell('E').value).equal('Assistant Construction Manager');
+        expect(sheet.getRow(15).getCell('E').value).equal('Assistant Construction Manager.3');
         expect(sheet.getRow(15).getCell('G').value).equal('3');
     });
 
