@@ -6,6 +6,7 @@ import {existsSync} from 'node:fs';
 import * as path from 'node:path';
 import {
     XlsxRender,
+    ZipXlsxTemplateApp,
     BufferType,
     compileAll,
     compileRuleSheetName,
@@ -75,46 +76,75 @@ async function main() {
 //    --remove 启用时,编译后的 xlsx 文件,移除 export_metadata.config 配置文件(可以调用ExprResolver.removeUnExportSheets)
 //   以上都成功 则 输出 渲染后的 xlsx 文件 , 有指定 --save 参数 则输出到指定目录，否则输出到当前目录
     program.command('compile')
-        .argument('<string>', "xlsx file path")
-        .option('-s,--save <string>', "save compiled xlsx file to user dir")
+        .argument('<string>', "xlsx or zip file path")
+        .option('-s,--save <string>', "save compiled file to user dir")
+        .option('-o,--output <string>', "output directory (alias for -s)")
         .option('-n,--sheet-name <string>', "compile xlsx sheet name when xlsx has multiple sheets")
         .option('-r,--remove', 'remove configure rules sheet', false)
-        .action(async (xlsxFile: string, options: { [key: string]: any }) => {
+        .action(async (inputFile: string, options: { [key: string]: any }) => {
             try {
-                console.log(chalk.green('📄 Compiling Excel file...'));
+                const outDir = options.output || options.save || process.cwd();
 
                 // Resolve file path
-                const filePath = await resolveFilePath(xlsxFile);
+                const filePath = await resolveFilePath(inputFile);
+                const ext = path.extname(filePath).toLowerCase();
                 console.log(chalk.gray(`Loading file: ${filePath}`));
 
                 // Read file buffer
                 const buffer = await fs.readFile(filePath);
 
-                // Determine sheet name
-                const xlsx = await XlsxRender.create(buffer);
-                const sheets = xlsx.getSheets();
-                const sheetName = options.sheetName || sheets[0].name;
-                console.log(chalk.gray(`Target sheet: ${sheetName}`));
-
-                // Check if rule sheet exists
+                // Compile options
                 const ruleSheetName = options.sheetName || compileRuleSheetName;
-
-                // Compile file
-                console.log(chalk.gray('Compiling rules...'));
                 const opts = new RuleMapOptions();
                 opts.sheetName = ruleSheetName;
                 opts.remove = options.remove || false;
-                const compiledBuffer = await compileAll(buffer, opts as AutoOptions);
-                console.log(chalk.green('✓ Compilation completed'));
 
-                // Determine output path
-                const outputFile = path.join(options.save || process.cwd(), generateOutputFilename(xlsxFile));
+                let outputBuffer: Buffer;
+                let outputExt = '.xlsx';
+
+                if (ext === '.zip') {
+                    // ====== ZIP 压缩包编译 ======
+                    console.log(chalk.green('📦 Compiling ZIP archive...'));
+                    const app = new ZipXlsxTemplateApp(buffer);
+                    console.log(chalk.gray(`Found ${app.getEntries().size} xlsx entries`));
+
+                    const files = await ZipXlsxTemplateApp.compileAll(
+                        app.getEntries(), undefined, opts as AutoOptions
+                    );
+                    const zip = new (await import('adm-zip')).default(buffer);
+                    for (const [k, data] of files.entries()) {
+                        const entry = zip.getEntry(k);
+                        if (entry) entry.setData(data);
+                    }
+                    outputBuffer = zip.toBuffer();
+                    outputExt = '.zip';
+                    console.log(chalk.green('✓ ZIP compilation completed'));
+
+                } else {
+                    // ====== 单 XLSX 编译 ======
+                    console.log(chalk.green('📄 Compiling Excel file...'));
+                    const xlsx = await XlsxRender.create(buffer);
+                    const sheets = xlsx.getSheets();
+                    const sheetName = options.sheetName || sheets[0].name;
+                    console.log(chalk.gray(`Target sheet: ${sheetName}`));
+
+                    console.log(chalk.gray('Compiling rules...'));
+                    const compiledBuffer = await compileAll(buffer, opts as AutoOptions);
+                    outputBuffer = Buffer.from(compiledBuffer);
+                    console.log(chalk.green('✓ Compilation completed'));
+                }
+
+                // Determine output filename
+                const basename = path.basename(inputFile, path.extname(inputFile));
+                const timestamp = Date.now();
+                const outputFilename = `${basename}_${timestamp}${outputExt}`;
+                const outputFile = path.join(outDir, outputFilename);
                 console.log(chalk.gray(`Saving to: ${outputFile}`));
 
                 // Write output file
-                await fs.writeFile(outputFile, compiledBuffer);
+                await fs.writeFile(outputFile, outputBuffer);
 
-                console.log(chalk.green('✓ Excel file compiled successfully!'));
+                console.log(chalk.green('✓ File compiled successfully!'));
                 console.log(chalk.green(`📁 Output: ${outputFile}`));
             } catch (error) {
                 console.error(chalk.red('✗ Compilation failed:'));
@@ -133,34 +163,27 @@ async function main() {
 // 以上有任意异常，都输出异常提示 并终止 业务逻辑
 // 以上都成功 则 输出 渲染后的 xlsx 文件 , 有指定 --save 参数 则输出到指定目录，否则输出到当前目录
     program.command("render")
-        .argument('<string>', "xlsx file path")
+        .argument('<string>', "xlsx or zip file path")
         .option('-c,--compile', "auto compile flag", false)
         .option('-n,--sheet-name <string>', "render xlsx sheet name when xlsx has multiple sheets")
-        .option('-s,--save <string>', "save render xlsx file to user dir")
-        .option('-d,--data <string>', "render xlsx file data from")
+        .option('-s,--save <string>', "save render file to user dir")
+        .option('-o,--output <string>', "output directory (alias for -s)")
+        .option('-d,--data <string>', "render file data from")
         .option('--header <string>', "call remote http json data with header", [])
         .option('--body <string>', "call remote http json request with body")
         .option('-r,--remove', 'remove configure rules sheet', false)
-        .action(async (xlsxFile: string, options: { [key: string]: any }) => {
+        .action(async (inputFile: string, options: { [key: string]: any }) => {
             try {
-                console.log(chalk.green('📄 Rendering Excel template...'));
+                // Resolve output dir
+                const outDir = options.output || options.save || process.cwd();
 
                 // Resolve file path
-                const filePath = await resolveFilePath(xlsxFile);
+                const filePath = await resolveFilePath(inputFile);
+                const ext = path.extname(filePath).toLowerCase();
                 console.log(chalk.gray(`Loading file: ${filePath}`));
 
                 // Read file buffer
-                let buffer = await fs.readFile(filePath);
-
-                // Determine sheet name
-                let xlsx = await XlsxRender.create(buffer);
-                const sheets = xlsx.getSheets();
-                const sheetName = options.sheetName || sheets[0].name;
-                console.log(chalk.gray(`Target sheet: ${sheetName}`));
-
-                // Check sheet exists and has placeholders
-                checkSheetAndPlaceholders(xlsx, sheetName);
-                console.log(chalk.gray('Sheet validation passed'));
+                const buffer = await fs.readFile(filePath);
 
                 // Parse render data
                 const renderData = await parseRenderData(options.data, options.header as string[], options.body as string);
@@ -171,40 +194,82 @@ async function main() {
                     console.log(chalk.gray(`Render data loaded with ${Object.keys(renderData).length} keys`));
                 }
 
-                // Compile if needed
-                if (options.compile) {
-                    console.log(chalk.gray('Auto-compiling rules...'));
-                    const ruleSheetName = options.sheetName || compileRuleSheetName;
-                    const opts = new RuleMapOptions();
-                    opts.sheetName = ruleSheetName;
-                    opts.remove = options.remove || false;
-                    const compiledResult = await compileAll(buffer, opts as AutoOptions);
-                    buffer = Buffer.from(compiledResult);
-                    xlsx = await XlsxRender.create(buffer);
-                    console.log(chalk.green('✓ Auto-compilation completed'));
+                let outputBuffer: Buffer;
+                let outputExt = '.xlsx';
+
+                if (ext === '.zip') {
+                    // ====== ZIP 压缩包渲染 ======
+                    console.log(chalk.green('📦 Rendering ZIP archive...'));
+                    const app = new ZipXlsxTemplateApp(buffer);
+                    console.log(chalk.gray(`Found ${app.getEntries().size} xlsx entries`));
+
+                    // Compile options
+                    let compileOpts: AutoOptions | undefined = undefined;
+                    if (options.compile) {
+                        console.log(chalk.gray('Auto-compiling rules...'));
+                        const ruleSheetName = options.sheetName || compileRuleSheetName;
+                        const opts = new RuleMapOptions();
+                        opts.sheetName = ruleSheetName;
+                        opts.remove = options.remove || false;
+                        compileOpts = opts as AutoOptions;
+                    }
+                    await app.substituteAll(renderData, compileOpts);
+                    outputBuffer = await app.generate({
+                        type: BufferType.NodeBuffer,
+                        compression: "DEFLATE",
+                        compressionOptions: { level: 9 }
+                    } as any);
+                    outputExt = '.zip';
+                    console.log(chalk.green('✓ ZIP rendering completed'));
+
+                } else {
+                    // ====== 单 XLSX 渲染 ======
+                    console.log(chalk.green('📄 Rendering Excel template...'));
+                    let xlsxBuffer = buffer;
+                    let xlsx = await XlsxRender.create(xlsxBuffer);
+                    const sheets = xlsx.getSheets();
+                    const sheetName = options.sheetName || sheets[0].name;
+                    console.log(chalk.gray(`Target sheet: ${sheetName}`));
+
+                    // Check sheet exists and has placeholders
+                    checkSheetAndPlaceholders(xlsx, sheetName);
+                    console.log(chalk.gray('Sheet validation passed'));
+
+                    // Compile if needed
+                    if (options.compile) {
+                        console.log(chalk.gray('Auto-compiling rules...'));
+                        const ruleSheetName = options.sheetName || compileRuleSheetName;
+                        const opts = new RuleMapOptions();
+                        opts.sheetName = ruleSheetName;
+                        opts.remove = options.remove || false;
+                        const compiledResult = await compileAll(xlsxBuffer, opts as AutoOptions);
+                        xlsxBuffer = Buffer.from(compiledResult);
+                        xlsx = await XlsxRender.create(xlsxBuffer);
+                        console.log(chalk.green('✓ Auto-compilation completed'));
+                    }
+
+                    // Render sheet
+                    console.log(chalk.gray('Rendering template...'));
+                    await xlsx.render(renderData, sheetName);
+
+                    // Generate output
+                    outputBuffer = await xlsx.generate({
+                        type: BufferType.NodeBuffer,
+                        compression: "DEFLATE",
+                        compressionOptions: { level: 9 }
+                    });
+                    console.log(chalk.green('✓ Excel template rendered successfully!'));
                 }
 
-                // Render sheet
-                console.log(chalk.gray('Rendering template...'));
-                await xlsx.render(renderData, sheetName);
-
-                // Generate output
-                const outputBuffer = await xlsx.generate({
-                    type: BufferType.NodeBuffer,
-                    compression: "DEFLATE",
-                    compressionOptions: {
-                        level: 9
-                    }
-                });
-
-                // Determine output path
-                const outputFile = path.join(options.save || process.cwd(), generateOutputFilename(xlsxFile));
+                // Determine output filename based on input type
+                const basename = path.basename(inputFile, path.extname(inputFile));
+                const timestamp = Date.now();
+                const outputFilename = `${basename}_${timestamp}${outputExt}`;
+                const outputFile = path.join(outDir, outputFilename);
                 console.log(chalk.gray(`Saving to: ${outputFile}`));
 
                 // Write output file
                 await fs.writeFile(outputFile, outputBuffer);
-
-                console.log(chalk.green('✓ Excel template rendered successfully!'));
                 console.log(chalk.green(`📁 Output: ${outputFile}`));
             } catch (error) {
                 console.error(chalk.red('✗ Rendering failed:'));
