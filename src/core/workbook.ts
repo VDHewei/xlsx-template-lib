@@ -211,7 +211,7 @@ class Workbook {
                 return result;
             }
         }
-        return "";
+        return value;
     }
 
     /**
@@ -609,7 +609,11 @@ class Workbook {
         if (exists) {
             return value;
         }
-        const res = this.valueGet(substitutions, placeholder);
+        let res = this.valueGet(substitutions, placeholder);
+        if(placeholder.subType!=="" && placeholder.subType!=="image" 
+            && res !== undefined && res !== null){
+            res = this.executeFormatters(res, placeholder, placeholder.subType);
+        }
         if (placeholder.placeholder !== "") {
             this.setPlaceholderValueByCache(placeholder, res)
         }

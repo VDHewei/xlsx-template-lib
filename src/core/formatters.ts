@@ -1,6 +1,7 @@
 import {isMap} from "node:util/types";
 import {isArray} from "lodash";
 import {Placeholder, CustomFormatter} from "./types";
+import { fromUnixTime,format, parseISO } from 'date-fns'
 
 /**
  * 从对象中按单键名获取值（支持数组索引语法 `key[index]`）
@@ -112,12 +113,71 @@ function resolveFullDataPath(placeholder: Placeholder): string {
  * @returns 格式化后的字符串，或 undefined
  */
 const dateFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _key?: string): string | undefined => {
-    if (value instanceof Date) {
-        // Excel 中日期是从 1900/01/01 开始的天数
-        return Number((value.getTime() / (1000 * 60 * 60 * 24)) + 25569).toString();
+    if(!_key || _key !== "date"){
+        return undefined;
     }
+    if (value instanceof Date) {
+        return format(value as Date,'yyyy-MM-dd');
+    }
+    if (typeof value === 'number') {
+		return format(fromUnixTime(value),'yyyy-MM-dd');
+	} else if (typeof value === 'string') {
+        let timestamp= parseInt(value as string, 10);
+        if(!isNaN(timestamp)) {
+            return format(fromUnixTime(timestamp),'yyyy-MM-dd');
+        }
+        // 验证是否为 ISO 格式日期字符串
+        const result = parseISO(value as string);
+        if (!isNaN(result.getTime())) {
+            return format(result,'yyyy-MM-dd');
+        }
+		const date = new Date()
+        const [hour, minute, second = '00'] = value.split(':')
+		date.setHours(parseInt(hour, 10))
+		date.setMinutes(parseInt(minute, 10))
+		date.setSeconds(parseInt(second, 10))
+		return format(date,'yyyy-MM-dd');
+	}
     return undefined;
 };
+
+
+/**
+ * 日月-格式化器 - 将 Date 对象转换为 Excel 月日 - 序号
+ * @param value - 待格式化的值
+ * @param _placeholder - 占位符信息（未使用）
+ * @param _key - 可选键名（未使用）
+ * @returns 格式化后的字符串，或 undefined
+ */
+const dayFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _key?: string): string | undefined => {
+    if(!_key || _key !== "day"){
+        return undefined;
+    }
+    if (value instanceof Date) {
+        return format(value as Date,'MM-dd');
+    }
+    if (typeof value === 'number') {
+		return format(fromUnixTime(value),'MM-dd');
+	} else if (typeof value === 'string') {
+        let timestamp= parseInt(value as string, 10);
+        if(!isNaN(timestamp)) {
+            return format(fromUnixTime(timestamp),'MM-dd');
+        }
+        // 验证是否为 ISO 格式日期字符串
+        const result = parseISO(value as string);
+        if (!isNaN(result.getTime())) {
+            return format(result,'MM-dd');
+        }
+		const date = new Date()
+        const [hour, minute, second = '00'] = value.split(':')
+		date.setHours(parseInt(hour, 10))
+		date.setMinutes(parseInt(minute, 10))
+		date.setSeconds(parseInt(second, 10))
+		return format(date,'MM-dd');
+	}
+    return undefined;
+};
+
 
 /**
  * 数字格式化器 - 将数字转换为字符串
@@ -127,8 +187,17 @@ const dateFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _
  * @returns 格式化后的字符串，或 undefined
  */
 const numberFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _key?: string): string | undefined => {
+    if(!_key || _key !== "number"){
+        return undefined;
+    }
     if (typeof value === "number") {
         return value.toString();
+    }
+    if (typeof value === "string") {
+        const num = parseFloat(value);
+        if (!isNaN(num)) {
+            return value as string;
+        }
     }
     return undefined;
 };
@@ -141,8 +210,19 @@ const numberFormatter: CustomFormatter = (value: any, _placeholder: Placeholder,
  * @returns 格式化后的字符串，或 undefined
  */
 const booleanFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _key?: string): string | undefined => {
+    if(!_key || (_key !== "boolean" && _key !== "bool")){
+        return undefined;
+    }
     if (typeof value === "boolean") {
         return Number(value).toString();
+    }
+    if (typeof value === "string") {
+        const lower = value.toLowerCase();
+        if (lower === "true") {
+            return "1";
+        } else if (lower === "false") {
+            return "0";
+        }
     }
     return undefined;
 };
@@ -155,8 +235,14 @@ const booleanFormatter: CustomFormatter = (value: any, _placeholder: Placeholder
  * @returns 格式化后的字符串，或 undefined
  */
 const stringFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _key?: string): string | undefined => {
+    if(!_key || _key !== "string"){
+        return undefined;
+    }
     if (typeof value === "string") {
-        return value.toString();
+        return value as string;
+    }
+    if (value !== null && value !== undefined) {
+        return String(value);
     }
     return undefined;
 };
@@ -166,7 +252,8 @@ const defaultFormatters: CustomFormatter[] = [
     dateFormatter,
     numberFormatter,
     booleanFormatter,
-    stringFormatter
+    stringFormatter,
+    dayFormatter,
 ];
 
 export {
@@ -175,6 +262,7 @@ export {
     defaultValueDotGet,
     resolveFullDataPath,
     dateFormatter,
+    dayFormatter,
     numberFormatter,
     booleanFormatter,
     stringFormatter,
