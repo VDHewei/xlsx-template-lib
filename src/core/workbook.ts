@@ -568,13 +568,16 @@ class Workbook {
     }
 
     private async replaceCellValue(value: exceljs.CellValue, placeholder: string, newValue: any | undefined): Promise<exceljs.CellValue> {
-        if (newValue === undefined || newValue === null) return value;
         if (typeof value === 'string') {
+            if (newValue === undefined || newValue === null) {
+                return value.replace(placeholder, '');
+            }
             if (value === placeholder) {
                 return newValue;
             }
             return value.replace(placeholder, String(newValue));
         }
+        if (newValue === undefined || newValue === null) return value;
         return newValue;
     }
 
@@ -582,9 +585,7 @@ class Workbook {
         // 循环 placeholders 数组，替换 value 中的占位符
         for (const placeholder of placeholders) {
             const substitution = this.getSubstitution(placeholder, substitutions);
-            if (substitution !== undefined) {
-                value = value.replace(placeholder.placeholder, substitution);
-            }
+            value = value.replace(placeholder.placeholder, substitution !== undefined ? String(substitution) : '');
         }
         return value;
     }

@@ -86,6 +86,7 @@ class ArgumentData {
             case `]`:
                 if (tokenNextIter[this.tokenIterIndex] === "groups") {
                     this.groups.push(value);
+                    this.tokenIterIndex++; // groups 结束，切换到下一个 token (suffix)
                 }
                 break;
             case `,`:
@@ -196,7 +197,7 @@ const sum_all: CmdFunction = (values: Object | Record<string, any>, argument: Ar
         }
     }
     if (emptyTimes === argc) {
-        return undefined;
+        return Number(argument.default);
     }
     if (isNaN(sum)) {
         throw new Error(`parse ${argument.p.name} NaN error`);
@@ -286,6 +287,10 @@ const resolveArgument = function (p: Placeholder, data: object | Record<string, 
 
 const commandExtendQuery: QueryFunction = function (values: object | Record<string, any>, p: Placeholder): any | undefined {
     if (p.type !== "fn") {
+        // 与 valueGet 保持一致：当 p.key 存在时使用完整路径
+        if (p.key) {
+            return valueDotGet(values, p.name + '.' + p.key, p.default || '');
+        }
         return defaultValueDotGet(values, p)
     }
     const argument = resolveArgument(p, values);
