@@ -37,6 +37,9 @@ class XlsxRender extends Workbook {
     }
 
     public getSheets(): SheetInfo[] {
+        if (this.sheets.length === 0 && this.workbook) {
+            this.sheets = this.loadSheets(this.workbook);
+        }
         return this.sheets;
     }
 

@@ -289,7 +289,8 @@ const commandExtendQuery: QueryFunction = function (values: object | Record<stri
     if (p.type !== "fn") {
         // 与 valueGet 保持一致：当 p.key 存在时使用完整路径
         if (p.key) {
-            return valueDotGet(values, p.name + '.' + p.key, p.default || '');
+            const defaultVal = p.type === 'table' ? [] : (p.default || '');
+            return valueDotGet(values, p.name + '.' + p.key, defaultVal, p.type);
         }
         return defaultValueDotGet(values, p)
     }

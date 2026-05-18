@@ -293,18 +293,32 @@ class Workbook {
         await this.updateCells(cellsWithPlaceholders, substitutions, sheet.root);
     }
 
-    private parseCellAddress(addr: string): { colLetter: string; rowNum: number } | null {
+    /** 列字母转数字: A→1, Z→26, AA→27, AB→28 … */
+    private colLetterToNumber(letters: string): number {
+        let num = 0;
+        for (let i = 0; i < letters.length; i++) {
+            num = num * 26 + (letters.charCodeAt(i) - 64);
+        }
+        return num;
+    }
+
+    private parseCellAddress(addr: string): { colLetter: string; colNumber: number; rowNum: number } | null {
         const match = addr.match(/^([A-Z]+)(\d+)$/i);
         if (!match) return null;
-        return { colLetter: match[1], rowNum: parseInt(match[2], 10) };
+        return {
+            colLetter: match[1],
+            colNumber: this.colLetterToNumber(match[1]),
+            rowNum: parseInt(match[2], 10),
+        };
     }
 
     async scanSheetPlaceholder(sheet?: exceljs.Worksheet): Promise<CellPlaceholder[]> {
         const list: CellPlaceholder[] = [];
         const cached = new Map<string, boolean>();
         const worksheet = !sheet ? this.sheet.root : sheet;
+        const maxCol = worksheet.columnCount || 0;
         for (const row of worksheet.getRows(1, worksheet.rowCount)) {
-            const columns = row.cellCount;
+            const columns = Math.max(row.cellCount, maxCol);
             for (let i = 1; i <= columns; i++) {
                 let cell = row.getCell(i);
                 // 合并单元格，只处理第一个单元格
@@ -335,7 +349,7 @@ class Workbook {
                     Value: text as exceljs.CellValue,
                     Placeholders: pls,
                     Sheet: worksheet.name,
-                    Column: parsed.colLetter.charCodeAt(0) - 'A'.charCodeAt(0) + 1,
+                    Column: parsed.colNumber,
                 };
                 // 合并单元格，获取/推算最后一个单元格地址
                 if (cell.isMerged) {
@@ -347,7 +361,7 @@ class Workbook {
                         const lastParsed = this.parseCellAddress(lastAddr);
                         if (lastParsed) {
                             cellValue.LastRow = String(lastParsed.rowNum);
-                            cellValue.LastColumn = lastParsed.colLetter.charCodeAt(0) - 'A'.charCodeAt(0) + 1;
+                            cellValue.LastColumn = lastParsed.colNumber;
                         }
                     }
                 }
@@ -709,7 +723,7 @@ class Workbook {
      * @param workbook - 工作簿
      * @returns 工作表信息数组
      */
-    private loadSheets(workbook: exceljs.Workbook): SheetInfo[] {
+    protected loadSheets(workbook: exceljs.Workbook): SheetInfo[] {
         const sheets: SheetInfo[] = [];
         for (const sheet of workbook.worksheets) {
             sheets.push({
