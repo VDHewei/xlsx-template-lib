@@ -9,6 +9,7 @@ import JsZip from "jszip";
 import AdmZip from "adm-zip";
 import {AutoOptions, compileAll, commandExtendQuery, compileRuleSheetName} from "./extends"
 import {RuleMapOptions} from "./helper";
+import fs from "node:fs/promises";
 
 type CustomChecker =(data: Buffer, options: FullOptions & { [key: string]: any}, values: Object, fileName?: string)=> Promise<Buffer>
 
@@ -110,6 +111,33 @@ class ZipXlsxTemplateApp {
             const xlsx = await XlsxRender.create(buf, renderOpts);
             await xlsx.substituteAll(renderData);
             this.records.set(k, xlsx);
+        }
+        return this;
+    }
+
+    /**
+     * 渲染 zip 中所有 xlsx 文件的指定 sheet
+     * @param sheetName - 要渲染的 sheet 名称
+     * @param renderData - 渲染数据
+     * @param compileOpts - 可选编译选项（如 { sheetName: compileRuleSheetName, remove: true }）
+     * @param renderOpts - 可选渲染选项
+     */
+    public async renderSheet(
+        sheetName: string,
+        renderData: Object,
+        compileOpts?: AutoOptions,
+        renderOpts?: FullOptions
+    ): Promise<ZipXlsxTemplateApp> {
+        // 编译（如需要）
+        let entries = this.xlsxEntries;
+        if (compileOpts) {
+            entries = await ZipXlsxTemplateApp.compileAll(entries, renderData, compileOpts);
+        }
+        // 渲染指定 sheet
+        for (const [key, buf] of entries.entries()) {
+            const xlsx = await XlsxRender.create(buf, renderOpts);
+            await xlsx.render(renderData, sheetName);
+            this.records.set(key, xlsx);
         }
         return this;
     }

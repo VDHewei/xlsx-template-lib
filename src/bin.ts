@@ -94,9 +94,8 @@ async function main() {
                 const buffer = await fs.readFile(filePath);
 
                 // Compile options
-                const ruleSheetName = options.sheetName || compileRuleSheetName;
                 const opts = new RuleMapOptions();
-                opts.sheetName = ruleSheetName;
+                opts.sheetName = compileRuleSheetName;
                 opts.remove = options.remove || false;
 
                 let outputBuffer: Buffer;
@@ -207,9 +206,8 @@ async function main() {
                     let compileOpts: AutoOptions | undefined = undefined;
                     if (options.compile) {
                         console.log(chalk.gray('Auto-compiling rules...'));
-                        const ruleSheetName = options.sheetName || compileRuleSheetName;
                         const opts = new RuleMapOptions();
-                        opts.sheetName = ruleSheetName;
+                        opts.sheetName = options.sheetName;
                         opts.remove = options.remove || false;
                         compileOpts = opts as AutoOptions;
                     }
@@ -238,9 +236,8 @@ async function main() {
                     // Compile if needed
                     if (options.compile) {
                         console.log(chalk.gray('Auto-compiling rules...'));
-                        const ruleSheetName = options.sheetName || compileRuleSheetName;
                         const opts = new RuleMapOptions();
-                        opts.sheetName = ruleSheetName;
+                        opts.sheetName = compileRuleSheetName;
                         opts.remove = options.remove || false;
                         const compiledResult = await compileAll(xlsxBuffer, opts as AutoOptions);
                         xlsxBuffer = Buffer.from(compiledResult);
