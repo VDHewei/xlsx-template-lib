@@ -22,6 +22,7 @@ import {
 } from './xml-utils';
 import {valueDotGet, defaultFormatters, resolveFullDataPath} from './formatters';
 import {defaultExtractPlaceholders} from './placeholders';
+import {commandExtendQuery} from "../extends";
 
 // ==================== Workbook 类 ====================
 /**
@@ -686,17 +687,22 @@ class Workbook {
      * @returns 查询到的值
      */
     public valueGet(substitutions: object | Record<string, any>, p: Placeholder, full?: boolean): any {
-        if (this.option.customQueryFunction === undefined) {
+        if(p.type === "fn"){
+            return this.parseFunc(substitutions,p)
+        }else {
             if (p.key) {
                 return valueDotGet(substitutions, p.name + '.' + p.key, p.default || (p.type === 'table' ? [] : ''), p.type);
             }
             return valueDotGet(substitutions, p.name, p.default || (p.type === 'table' ? [] : ''), p.type)
         }
-        if (full !== undefined && typeof full === "boolean" && full &&
-            p.key && !p.name.endsWith(`.${p.key}`)) {
-            p.name = p.name + '.' + p.key
+    }
+
+    // 解析函数
+    private parseFunc(substitutions: object | Record<string, any>, p: Placeholder): any {
+        if(!this.option.customQueryFunction){
+          return commandExtendQuery(substitutions,p)
         }
-        return this.option.customQueryFunction(substitutions, p)
+        return this.option.customQueryFunction(substitutions,p)
     }
 
 

@@ -1,15 +1,14 @@
 import {
     Workbook,
     FullOptions,
-    SheetInfo, BufferType,
+    SheetInfo, BufferType, valueDotGet,
 } from "./core";
 import {extname} from "node:path";
 import {clone} from "lodash"
 import JsZip from "jszip";
 import AdmZip from "adm-zip";
-import {AutoOptions, compileAll, commandExtendQuery, compileRuleSheetName} from "./extends"
+import {AutoOptions, compileAll, commandExtendQuery, compileRuleSheetName, CmdFunction, Argument} from "./extends"
 import {RuleMapOptions} from "./helper";
-import fs from "node:fs/promises";
 
 type CustomChecker =(data: Buffer, options: FullOptions & { [key: string]: any}, values: Object, fileName?: string)=> Promise<Buffer>
 
@@ -210,9 +209,39 @@ class ZipXlsxTemplateApp {
     }
 }
 
+// formStatusImage(histories,statusesData,"statusCode","xxx")
+const formStatusImage: CmdFunction = (values: Object | Record<string, any>, argument: Argument): any | undefined => {
+    const histories = valueDotGet(values, argument.root);
+    const statusesData = valueDotGet(values, argument.groups[0] || '');
+    const matchField = argument.groups[1]?.replace(/^"|"$/g, '');
+    const matchValue = argument.groups[2]?.replace(/^"|"$/g, '');
+
+    if (!Array.isArray(histories) || !matchValue) return undefined;
+
+    // 从 formStatuses 中查找 identifier
+    let identifier: string | undefined;
+    if (statusesData && typeof statusesData === 'object') {
+        if (statusesData[matchValue] != null) {
+            identifier = typeof statusesData[matchValue] === 'object'
+                ? statusesData[matchValue].identifier
+                : statusesData[matchValue];
+        } else if (Array.isArray(statusesData)) {
+            const found = statusesData.find((s: any) => s[matchField] === matchValue);
+            if (found) identifier = found.identifier;
+        }
+    }
+    if (!identifier) return undefined;
+
+    // 过滤 formStatusHistories 中匹配 identifier 的条目，返回最后一条的签名图片
+    const matched = histories.filter((h: any) => h.formStatusIdentifier === identifier);
+    if (matched.length === 0) return undefined;
+    return matched[matched.length - 1].actionSignatureBase64;
+};
+
 export {
     ZipXlsxTemplateApp,
     XlsxRender,
     CustomChecker,
     CustomCheckerOptions,
+    formStatusImage,
 }
