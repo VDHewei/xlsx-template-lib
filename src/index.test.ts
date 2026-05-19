@@ -15,6 +15,7 @@ import {
     compileWorkSheet,
     DefaultPlaceholderCellValue,
     exceljs,
+    ExprResolver,
     loadWorkbook,
     parseWorkSheetRules,
     PlaceholderCellValue, RuleMapOptions,
@@ -548,5 +549,228 @@ describe('compileZip', { tags: ["compile"] }, () => {
         if (testEnv(XlsxTest, 'true', 'ZIP_COMPILE')) {
             await fs.writeFile(`./test_data/test_zip_3_${new Date().valueOf()}.zip`, processedBuffer);
         }
+    });
+});
+
+describe('date format placeholders', { tags: ["backend"] }, () => {
+    // 统一测试用数据
+    const ISO_DATE = '1992-05-09T00:00:00.000Z';
+    const UNIX_TS = 705369600; // 1992-05-09 UTC (Math.floor(new Date('1992-05-09T00:00:00Z').getTime() / 1000))
+    const DATE_OBJ = new Date('1992-05-09T00:00:00.000Z');
+
+    async function buildAndFill(
+        placeholders: Record<string, string>,
+        values: Record<string, any>
+    ): Promise<exceljs.Worksheet> {
+        const wb = new exceljs.Workbook();
+        const ws = wb.addWorksheet('Sheet1');
+        let col = 1;
+        for (const [addr, ph] of Object.entries(placeholders)) {
+            ws.getCell(addr).value = ph;
+            col++;
+        }
+        const xlsx = Buffer.from(await wb.xlsx.writeBuffer());
+        const buffer = await generateXlsxTemplate(xlsx, values, { type: BufferType.NodeBuffer });
+        expect(buffer).toBeInstanceOf(Buffer);
+        const w = await loadWorkbook(buffer);
+        return w.getWorksheet('Sheet1');
+    }
+
+    it('${user.birthday:date} — 普通对象路径，date 格式化 (ISO string)', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:date}' },
+            { user: { birthday: ISO_DATE } }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+    });
+
+    it('${user.birthday:date} — Date 对象输入', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:date}' },
+            { user: { birthday: DATE_OBJ } }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+    });
+
+    it('${user.birthday:date} — Unix 时间戳(数字)输入', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:date}' },
+            { user: { birthday: UNIX_TS } }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+    });
+
+    it('${user.birthday:date} — Unix 时间戳(字符串)输入', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:date}' },
+            { user: { birthday: String(UNIX_TS) } }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+    });
+
+    it('${user.birthday:day} — 普通对象路径，day 格式化 (ISO string)', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:day}' },
+            { user: { birthday: ISO_DATE } }
+        );
+        expect(sheet.getCell('A1').value).equal('05-09');
+    });
+
+    it('${user.birthday:day} — Date 对象输入', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:day}' },
+            { user: { birthday: DATE_OBJ } }
+        );
+        expect(sheet.getCell('A1').value).equal('05-09');
+    });
+
+    it('${user.birthday:day} — Unix 时间戳(数字)输入', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${user.birthday:day}' },
+            { user: { birthday: UNIX_TS } }
+        );
+        expect(sheet.getCell('A1').value).equal('05-09');
+    });
+
+    it('${table:users.birthday:date} — 表格数组 date 格式化', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${table:users.birthday:date}' },
+            {
+                users: [
+                    { birthday: '1992-05-09' },
+                    { birthday: '2000-12-25' },
+                ]
+            }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+        expect(sheet.getCell('A2').value).equal('2000-12-25');
+    });
+
+    it('${table:users.birthday:day} — 表格数组 day 格式化', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${table:users.birthday:day}' },
+            {
+                users: [
+                    { birthday: '1992-05-09' },
+                    { birthday: '2000-12-25' },
+                ]
+            }
+        );
+        expect(sheet.getCell('A1').value).equal('05-09');
+        expect(sheet.getCell('A2').value).equal('12-25');
+    });
+
+    it('${table:users.birthday:date} — 表格中混合 Unix 时间戳', async () => {
+        const sheet = await buildAndFill(
+            { A1: '${table:users.birthday:date}' },
+            {
+                users: [
+                    { birthday: UNIX_TS },
+                    { birthday: '2000-12-25T00:00:00.000Z' },
+                ]
+            }
+        );
+        expect(sheet.getCell('A1').value).equal('1992-05-09');
+        expect(sheet.getCell('A2').value).equal('2000-12-25');
+    });
+});
+
+describe('compile subType alias expansion', { tags: ["compile"] }, () => {
+    // Builds a workbook with a rule sheet and an empty target sheet, runs compile, returns the target worksheet.
+    async function compileAndGetSheet(
+        rules: Array<[type: string, value: string]>,
+        targetSheetName = 'Sheet1'
+    ): Promise<exceljs.Worksheet> {
+        const wb = new exceljs.Workbook();
+        const configSheet = wb.addWorksheet('export_metadata.config');
+        const dataSheet = wb.addWorksheet(targetSheetName);
+
+        rules.forEach(([type, value], idx) => {
+            configSheet.getCell(`A${idx + 1}`).value = type;
+            configSheet.getCell(`B${idx + 1}`).value = value;
+        });
+        // Ensure all referenced cells exist (findCell returns undefined for non-existent cells)
+        dataSheet.getCell('A1').value = '';
+        dataSheet.getCell('B1').value = '';
+        dataSheet.getCell('C1').value = '';
+
+        const xlsxBuf = Buffer.from(await wb.xlsx.writeBuffer());
+        const compileOptions = new RuleMapOptions();
+        compileOptions.compileSheets = [targetSheetName];
+        const result = await ExprResolver.compile(xlsxBuf, 'export_metadata.config', compileOptions);
+        expect(result.errs, `compile errors: ${result.errs?.map(e => e.message).join(', ')}`).toBeUndefined();
+        return result.workbook.getWorksheet(targetSheetName);
+    }
+
+    it('${@#.@MY:date} — dual alias with :date subType preserved', async () => {
+        const sheet = await compileAndGetSheet([
+            ['alias', '#=exportData.LRR'],
+            ['alias', 'MY=mothOrYear'],
+            ['cell', 'A:1=${@#.@MY:date}'],
+        ]);
+        expect(sheet.getCell('A1').value).equal('${exportData.LRR.mothOrYear:date}');
+    });
+
+    it('${@#.@MY:day} — dual alias with :day subType preserved', async () => {
+        const sheet = await compileAndGetSheet([
+            ['alias', '#=exportData.LRR'],
+            ['alias', 'MY=mothOrYear'],
+            ['cell', 'A:1=${@#.@MY:day}'],
+        ]);
+        expect(sheet.getCell('A1').value).equal('${exportData.LRR.mothOrYear:day}');
+    });
+
+    it('${@LRR.mothOrYear:date} — single alias with :date subType preserved', async () => {
+        const sheet = await compileAndGetSheet([
+            ['alias', 'LRR=exportData.LRR'],
+            ['cell', 'A:1=${@LRR.mothOrYear:date}'],
+        ]);
+        expect(sheet.getCell('A1').value).equal('${exportData.LRR.mothOrYear:date}');
+    });
+
+    it('${@T} — alias without subType still works', async () => {
+        const sheet = await compileAndGetSheet([
+            ['alias', 'T=user.name'],
+            ['cell', 'A:1=${@T}'],
+        ]);
+        expect(sheet.getCell('A1').value).equal('${user.name}');
+    });
+
+    it('${@#.@MY:date} — compile then fill produces formatted date', async () => {
+        // Full round-trip: compile aliases, then fill with real data to verify :date still formats.
+        // Uses a 2-level data path to match the existing date-format test pattern.
+        const wb = new exceljs.Workbook();
+        const configSheet = wb.addWorksheet('export_metadata.config');
+        const dataSheet = wb.addWorksheet('Sheet1');
+
+        configSheet.getCell('A1').value = 'alias';
+        configSheet.getCell('B1').value = '#=person';
+        configSheet.getCell('A2').value = 'alias';
+        configSheet.getCell('B2').value = 'BD=birthday';
+        configSheet.getCell('A3').value = 'cell';
+        configSheet.getCell('B3').value = 'A:1=${@#.@BD:date}';
+        dataSheet.getCell('A1').value = '';
+
+        const xlsxBuf = Buffer.from(await wb.xlsx.writeBuffer());
+        const compileOptions = new RuleMapOptions();
+        compileOptions.compileSheets = ['Sheet1'];
+        const result = await ExprResolver.compile(xlsxBuf, 'export_metadata.config', compileOptions);
+        expect(result.errs).toBeUndefined();
+
+        // Verify compile produced the correct placeholder text
+        expect(result.workbook.getWorksheet('Sheet1').getCell('A1').value)
+            .equal('${person.birthday:date}');
+
+        // Remove config sheet so generateXlsxTemplate only sees the data sheet
+        const compiledWb = ExprResolver.removeUnExportSheets(result.workbook, compileOptions);
+        const compiledBuf = await ExprResolver.toBuffer(compiledWb);
+
+        const filledBuf = await generateXlsxTemplate(compiledBuf, {
+            person: { birthday: '1992-05-09T00:00:00.000Z' }
+        }, { type: BufferType.NodeBuffer });
+
+        const filledWb = await loadWorkbook(filledBuf as Buffer);
+        const filledSheet = filledWb.getWorksheet('Sheet1');
+        expect(filledSheet.getCell('A1').value).equal('1992-05-09');
     });
 });

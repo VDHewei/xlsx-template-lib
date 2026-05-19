@@ -4,8 +4,9 @@ import {Placeholder, CustomPlaceholderExtractor, ExtensionOptions} from "./types
  * 默认占位符正则表达式
  * 匹配格式：${type:name.key:subType}，其中 type、key、subType 均为可选项
  * 示例：${name}、${table:items.key}、${image:photo:jpg}
+ * 注：type 前缀不允许含 `.`，以避免将 ${name.key:subType} 误解析为 type=name, name=key:subType
  */
-const defaultRe = /\${(?:([^{}:]+?):)?([^{}:]+?)(?:\.([^{}:]+?))?(?::([^{}:]+?))??}/g;
+const defaultRe = /\${(?:([^{}:.]+?):)?([^{}:]+?)(?:\.([^{}:]+?))?(?::([^{}:]+?))??}/g;
 
 /**
  * 默认占位符提取器

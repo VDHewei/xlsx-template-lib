@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import exceljs from "exceljs";
 import {imageSize as sizeOf} from 'image-size';
 import {ImageValue} from "./types";
+import { parseISO } from "date-fns";
 
 /**
  * URL 匹配正则表达式
@@ -53,12 +54,19 @@ const toDate = function (v: any): Date | undefined {
         return new Date(timestamp);
     }
     if (isString(v)) {
-        const timestamp = Date.parse(v as string);
-        if (isNaN(timestamp)) {
-            return undefined;
-        } else {
-            return new Date(timestamp);
-        }
+        try {
+            const d = parseISO(v);
+            if (!isNaN(d.getTime())) {
+                return d;
+            }
+        } catch (e) {
+            const timestamp = Date.parse(v as string);
+            if (isNaN(timestamp)) {
+                return undefined;
+            } else {
+                return new Date(timestamp);
+            }
+        }  
     }
     return undefined;
 }

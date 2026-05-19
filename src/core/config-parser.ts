@@ -2102,7 +2102,7 @@ export const resolveAliasExpr = (ctx: CompileContext, templateValue: string, ind
                 break;
             }
             const offset = aliasTokens[i].length;
-            let end = searchIndexOf(compileValue, [',', '.', ')', ']'], start);
+            let end = searchIndexOf(compileValue, [',', '.', ')', ']', ':'], start);
             if (end < 0) {
                 end = compileValue.length
             }

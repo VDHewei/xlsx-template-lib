@@ -536,6 +536,10 @@ class Workbook {
                     value = item;
                 }
                 value = value !== undefined && value !== null ? value : '';
+                // Apply subType formatter (e.g. :date, :day) on each row value
+                if (p.subType && p.subType !== '' && p.subType !== 'image' && value !== '') {
+                    value = this.executeFormatters(value, p, p.subType);
+                }
                 items.push({
                     Row: cell.Row,
                     Column: cell.Column,

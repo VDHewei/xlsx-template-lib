@@ -2,6 +2,7 @@ import {isMap} from "node:util/types";
 import {isArray} from "lodash";
 import {Placeholder, CustomFormatter} from "./types";
 import { fromUnixTime,format, parseISO } from 'date-fns'
+import { ca } from "date-fns/locale";
 
 /**
  * 从对象中按单键名获取值（支持数组索引语法 `key[index]`）
@@ -105,6 +106,18 @@ function resolveFullDataPath(placeholder: Placeholder): string {
     return innerText;
 }
 
+const parseISODate = function (v: string): Date | undefined {
+    try{
+        const d = parseISO(v);
+        if (!isNaN(d.getTime())) {
+            return d;
+        }
+        return undefined;
+    }catch(e){
+        return undefined;
+    }
+}
+
 /**
  * 日期格式化器 - 将 Date 对象转换为 Excel 日期序号
  * @param value - 待格式化的值
@@ -122,13 +135,13 @@ const dateFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _
     if (typeof value === 'number') {
 		return format(fromUnixTime(value),'yyyy-MM-dd');
 	} else if (typeof value === 'string') {
-        let timestamp= parseInt(value as string, 10);
+        let timestamp = /^\d+$/.test(value.trim()) ? parseInt(value.trim(), 10) : NaN;
         if(!isNaN(timestamp)) {
             return format(fromUnixTime(timestamp),'yyyy-MM-dd');
         }
         // 验证是否为 ISO 格式日期字符串
-        const result = parseISO(value as string);
-        if (!isNaN(result.getTime())) {
+        const result = parseISODate(value as string);
+        if (result!==undefined) {
             return format(result,'yyyy-MM-dd');
         }
 		const date = new Date()
@@ -159,13 +172,13 @@ const dayFormatter: CustomFormatter = (value: any, _placeholder: Placeholder, _k
     if (typeof value === 'number') {
 		return format(fromUnixTime(value),'MM-dd');
 	} else if (typeof value === 'string') {
-        let timestamp= parseInt(value as string, 10);
+        let timestamp = /^\d+$/.test(value.trim()) ? parseInt(value.trim(), 10) : NaN;
         if(!isNaN(timestamp)) {
             return format(fromUnixTime(timestamp),'MM-dd');
         }
         // 验证是否为 ISO 格式日期字符串
-        const result = parseISO(value as string);
-        if (!isNaN(result.getTime())) {
+        const result = parseISODate(value as string);
+        if (result!==undefined) {
             return format(result,'MM-dd');
         }
 		const date = new Date()
