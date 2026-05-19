@@ -64,7 +64,6 @@ async function main() {
             // dotenv is optional
         }
     }
-    AddCommand("formStatusImage",formStatusImage);
     const program = new Command();
     program
         .name('xlsx-cli')
@@ -358,6 +357,7 @@ async function main() {
     program.parse(process.argv);
 }
 
+AddCommand("formStatusImage",formStatusImage);
 main().catch(error => {
     console.error(chalk.red('✗ Fatal error:'));
     console.error(chalk.red(error instanceof Error ? error.message : String(error)));
