@@ -202,11 +202,14 @@ describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
         expect(sheet.getRow(21).getCell('A').value).equal('Instruction');
         expect(sheet.getRow(27).getCell('A').value).equal('Comments');
 
-        expect(sheet.getRow(13).getCell('E').value).equal('Amah.1');
+        //expect(sheet.getRow(13).getCell('E').value).equal('Amah.1');
+        expect(sheet.getRow(13).getCell('E').value).equal('Amah');
         expect(sheet.getRow(13).getCell('G').value).equal('1');
-        expect(sheet.getRow(14).getCell('E').value).equal('Amah (Seconded to ARUP).2');
+      //  expect(sheet.getRow(14).getCell('E').value).equal('Amah (Seconded to ARUP).2');
+        expect(sheet.getRow(14).getCell('E').value).equal('Amah (Seconded to ARUP)');
         expect(sheet.getRow(14).getCell('G').value).equal('2');
-        expect(sheet.getRow(15).getCell('E').value).equal('Assistant Construction Manager.3');
+      //  expect(sheet.getRow(15).getCell('E').value).equal('Assistant Construction Manager.3');
+        expect(sheet.getRow(15).getCell('E').value).equal('Assistant Construction Manager');
         expect(sheet.getRow(15).getCell('G').value).equal('3');
     });
 

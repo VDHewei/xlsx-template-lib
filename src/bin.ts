@@ -26,7 +26,6 @@ declare const __VERSION__: string;
 async function main() {
     // Load version: prioritize compile-time injected __VERSION__, otherwise read from package.json
     let version: string;
-    AddCommand("formStatusImage",formStatusImage);
     try {
         // Try to use compile-time injected version
         version = __VERSION__;
@@ -65,7 +64,7 @@ async function main() {
             // dotenv is optional
         }
     }
-
+    AddCommand("formStatusImage",formStatusImage);
     const program = new Command();
     program
         .name('xlsx-cli')
