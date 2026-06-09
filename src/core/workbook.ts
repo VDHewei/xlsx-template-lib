@@ -43,6 +43,10 @@ class Workbook {
     workbook: exceljs.Workbook | null = null;
     /** 取值结果缓存 **/
     _cache: Map<string, any | undefined> = new Map<string, any | undefined>();
+    /** ExcelJS 不支持 image-in-cell rich value，生成后需要补回单元格元数据 */
+    private _imageCellRefsBySheet: Map<string, Set<string>> = new Map<string, Set<string>>();
+    /** 表格展开会下推后续行，记录每个展开起点对应的新增行数 */
+    private _rowExpansionsBySheet: Map<string, Map<number, number>> = new Map<string, Map<number, number>>();
     // ==================== 构造函数 ====================
     /**
      * 创建工作簿实例
@@ -303,6 +307,16 @@ class Workbook {
         return num;
     }
 
+    private colNumberToLetter(num: number): string {
+        let letters = '';
+        while (num > 0) {
+            const remainder = (num - 1) % 26;
+            letters = String.fromCharCode(65 + remainder) + letters;
+            num = Math.floor((num - 1) / 26);
+        }
+        return letters;
+    }
+
     private parseCellAddress(addr: string): { colLetter: string; colNumber: number; rowNum: number } | null {
         const match = addr.match(/^([A-Z]+)(\d+)$/i);
         if (!match) return null;
@@ -405,6 +419,7 @@ class Workbook {
                 p => p.type === 'imageincell' || p.type === 'image' || (p.type === 'fn' && (p.subType === 'image' || p.subType === 'imageincell'))
             );
             if (imgPlaceholder) {
+                this.recordImageCellRef(cell);
                 const substitution = this.getSubstitution(imgPlaceholder, substitutions);
                 if (substitution !== undefined && substitution !== null && substitution !== '') {
                     // 构建 ImageValue 供 safeUpdate / updateImageCell 使用
@@ -453,7 +468,12 @@ class Workbook {
     public async safeUpdate(cellRef: exceljs.Cell, value: any,workSheet:exceljs.Worksheet,w:exceljs.Workbook): Promise<exceljs.CellValue> {
         // 无论单元各类型，先检查是否图片值
         if (isImageValue(value)) {
-            await updateImageCell(cellRef, value, workSheet, w);
+            const updated = await updateImageCell(cellRef, value, workSheet, w);
+            if (updated) {
+                const refs = this._imageCellRefsBySheet.get(workSheet.name) ?? new Set<string>();
+                refs.add(cellRef.address);
+                this._imageCellRefsBySheet.set(workSheet.name, refs);
+            }
             return cellRef.value;
         }
 
@@ -561,6 +581,7 @@ class Workbook {
         const result: CellData[] = [];
         const baseRow = typeof cell.Row === 'number' ? cell.Row : parseInt(String(cell.Row), 10);
         if (isNaN(baseRow)) return result;
+        this.recordRowExpansion(cell, baseRow, loopArray.size - 1);
 
         for (const [index, values] of loopArray.entries()) {
             // 将原始占位符文本中的 table 和非 table 占位符都替换为实际数据
@@ -670,13 +691,198 @@ class Workbook {
         // ExcelJS path: use workbook.writeBuffer (preferred, preserves styles)
         if (this.workbook) {
             const buffer = await this.workbook.xlsx.writeBuffer();
-            return buffer as OutputByType[T];
+            const zip = await this.patchGeneratedWorkbook(Buffer.from(buffer as ArrayBuffer));
+            const generateOptions = (options ?? {type: 'nodebuffer' as T}) as JsZip.JSZipGeneratorOptions<T>;
+            return await zip.generateAsync(generateOptions) as OutputByType[T];
         }
         // Fallback: JSZip path (XML-level manipulation)
         if (this.archive) {
             return await this.archive.generateAsync(options);
         }
         throw new Error('No workbook or archive loaded');
+    }
+
+    private async patchGeneratedWorkbook(buffer: Buffer): Promise<JsZip> {
+        const zip = await JsZip.loadAsync(buffer);
+        const worksheetPaths = await this.getWorksheetPaths(zip);
+
+        for (const [sheetName, worksheetPath] of worksheetPaths) {
+            const file = zip.file(worksheetPath);
+            if (!file) continue;
+
+            let xml = await file.async('string');
+            xml = this.removeMergedPhantomCells(xml);
+
+            const imageRefs = this._imageCellRefsBySheet.get(sheetName);
+            if (imageRefs && imageRefs.size > 0) {
+                xml = this.patchImageCellMetadata(xml, this.expandImageCellRefs(sheetName, imageRefs));
+                await this.ensureRichValueRelationship(zip, worksheetPath);
+            }
+
+            zip.file(worksheetPath, xml);
+        }
+
+        return zip;
+    }
+
+    private recordImageCellRef(cell: CellPlaceholder): void {
+        const sheetName = String(cell.Sheet ?? '');
+        const row = typeof cell.Row === 'number' ? cell.Row : parseInt(String(cell.Row), 10);
+        if (isNaN(row)) return;
+
+        const refs = this._imageCellRefsBySheet.get(sheetName) ?? new Set<string>();
+        refs.add(`${this.colNumberToLetter(cell.Column)}${row}`);
+        this._imageCellRefsBySheet.set(sheetName, refs);
+    }
+
+    private recordRowExpansion(cell: CellPlaceholder, baseRow: number, delta: number): void {
+        if (delta <= 0) return;
+
+        const sheetName = String(cell.Sheet ?? '');
+        const expansions = this._rowExpansionsBySheet.get(sheetName) ?? new Map<number, number>();
+        expansions.set(baseRow, Math.max(expansions.get(baseRow) ?? 0, delta));
+        this._rowExpansionsBySheet.set(sheetName, expansions);
+    }
+
+    private expandImageCellRefs(sheetName: string, refs: Set<string>): Set<string> {
+        const result = new Set<string>(refs);
+        const expansions = this._rowExpansionsBySheet.get(sheetName);
+        if (!expansions || expansions.size === 0) return result;
+
+        for (const ref of refs) {
+            const parsed = this.parseCellAddress(ref);
+            if (!parsed) continue;
+
+            let rowOffset = 0;
+            for (const [baseRow, delta] of expansions) {
+                if (baseRow < parsed.rowNum) {
+                    rowOffset += delta;
+                }
+            }
+            if (rowOffset > 0) {
+                result.add(`${this.colNumberToLetter(parsed.colNumber)}${parsed.rowNum + rowOffset}`);
+            }
+        }
+
+        return result;
+    }
+
+    private async getWorksheetPaths(zip: JsZip): Promise<Map<string, string>> {
+        const result = new Map<string, string>();
+        const workbookFile = zip.file('xl/workbook.xml');
+        const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+        if (!workbookFile || !relsFile) return result;
+
+        const workbookXml = await workbookFile.async('string');
+        const relsXml = await relsFile.async('string');
+        const relTargets = new Map<string, string>();
+
+        for (const match of relsXml.matchAll(/<Relationship\b[^>]*\/?>/g)) {
+            const attrs = this.extractXmlAttributes(match[0]);
+            if (attrs.Id && attrs.Target) {
+                relTargets.set(attrs.Id, this.normalizeWorkbookTarget(attrs.Target));
+            }
+        }
+
+        for (const match of workbookXml.matchAll(/<sheet\b[^>]*\/?>/g)) {
+            const attrs = this.extractXmlAttributes(match[0]);
+            const target = relTargets.get(attrs['r:id']);
+            if (target) {
+                result.set(this.decodeXmlAttribute(attrs.name), target);
+            }
+        }
+
+        return result;
+    }
+
+    private extractXmlAttributes(tag: string): Record<string, string> {
+        const attrs: Record<string, string> = {};
+        for (const match of tag.matchAll(/([\w:.-]+)="([^"]*)"/g)) {
+            attrs[match[1]] = match[2];
+        }
+        return attrs;
+    }
+
+    private normalizeWorkbookTarget(target: string): string {
+        const normalized = target.replace(/\\/g, '/').replace(/^\/+/, '');
+        return normalized.startsWith('xl/') ? normalized : `xl/${normalized}`;
+    }
+
+    private decodeXmlAttribute(value: string): string {
+        return value
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&');
+    }
+
+    private removeMergedPhantomCells(xml: string): string {
+        const refs = new Set<string>();
+        for (const match of xml.matchAll(/<mergeCell ref="([A-Z]+\d+):([A-Z]+\d+)"\/>/g)) {
+            const start = this.parseCellAddress(match[1]);
+            const end = this.parseCellAddress(match[2]);
+            if (!start || !end || end.rowNum <= start.rowNum) continue;
+
+            for (let row = start.rowNum + 1; row <= end.rowNum; row++) {
+                refs.add(`${start.colLetter}${row}`);
+            }
+        }
+
+        for (const ref of refs) {
+            xml = xml.replace(new RegExp(`<c\\s+[^>]*\\br="${ref}"(?=\\s|/|>)[^>]*/>`, 'g'), '');
+        }
+
+        return xml;
+    }
+
+    private patchImageCellMetadata(xml: string, refs: Set<string>): string {
+        for (const ref of refs) {
+            xml = xml.replace(new RegExp(`<c\\s+([^>]*\\br="${ref}"(?=\\s|/|>)[^>/]*)(/?)>`, 'g'), (_match, attrs: string, slash: string) => {
+                let nextAttrs = attrs;
+                nextAttrs = /\bt="[^"]*"/.test(nextAttrs)
+                    ? nextAttrs.replace(/\bt="[^"]*"/, 't="e"')
+                    : `${nextAttrs} t="e"`;
+                nextAttrs = /\bvm="[^"]*"/.test(nextAttrs)
+                    ? nextAttrs
+                    : `${nextAttrs} vm="1"`;
+                return `<c ${nextAttrs}${slash}>`;
+            });
+        }
+
+        return xml;
+    }
+
+    private async ensureRichValueRelationship(zip: JsZip, worksheetPath: string): Promise<void> {
+        const slashIndex = worksheetPath.lastIndexOf('/');
+        const dir = slashIndex >= 0 ? worksheetPath.slice(0, slashIndex) : '';
+        const filename = slashIndex >= 0 ? worksheetPath.slice(slashIndex + 1) : worksheetPath;
+        const relsPath = `${dir}/_rels/${filename}.rels`;
+        const relsFile = zip.file(relsPath);
+        let relsXml = relsFile
+            ? await relsFile.async('string')
+            : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+
+        if (relsXml.includes('richValue')) return;
+
+        const nextId = this.nextRelationshipId(relsXml);
+        const mediaTarget = this.firstMediaTarget(zip) ?? '../media/image1.png';
+        const relationship = `<Relationship Id="rId${nextId}" Type="http://schemas.microsoft.com/office/2022/10/relationships/richValueRel" Target="${mediaTarget}"/>`;
+        relsXml = relsXml.replace('</Relationships>', `${relationship}</Relationships>`);
+        zip.file(relsPath, relsXml);
+    }
+
+    private nextRelationshipId(relsXml: string): number {
+        let maxId = 0;
+        for (const match of relsXml.matchAll(/\bId="rId(\d+)"/g)) {
+            maxId = Math.max(maxId, parseInt(match[1], 10));
+        }
+        return maxId + 1;
+    }
+
+    private firstMediaTarget(zip: JsZip): string | undefined {
+        const mediaPath = Object.keys(zip.files).find(file => file.startsWith('xl/media/') && !zip.files[file].dir);
+        return mediaPath ? `../media/${mediaPath.slice('xl/media/'.length)}` : undefined;
     }
 
     /**

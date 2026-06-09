@@ -7,7 +7,7 @@ import {extname} from "node:path";
 import {clone} from "lodash"
 import JsZip from "jszip";
 import AdmZip from "adm-zip";
-import {AutoOptions, compileAll, commandExtendQuery, compileRuleSheetName, CmdFunction, Argument} from "./extends"
+import {AutoOptions, compileAll, commandExtendQuery, compileRuleSheetName, CmdFunction, Argument, AddCommand} from "./extends"
 import {RuleMapOptions} from "./helper";
 
 type CustomChecker =(data: Buffer, options: FullOptions & { [key: string]: any}, values: Object, fileName?: string)=> Promise<Buffer>
@@ -237,6 +237,8 @@ const formStatusImage: CmdFunction = (values: Object | Record<string, any>, argu
     if (matched.length === 0) return undefined;
     return matched[matched.length - 1].actionSignatureBase64;
 };
+
+AddCommand("formStatusImage", formStatusImage);
 
 export {
     ZipXlsxTemplateApp,
