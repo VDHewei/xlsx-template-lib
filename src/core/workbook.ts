@@ -35,6 +35,8 @@ class Workbook {
     option: FullOptions;
     /** JSZip 归档实例，管理 XLSX 内部所有文件 */
     archive: JsZip;
+    /** 原始模板归档，用于生成后恢复 ExcelJS 无法完整保留的样式定义 */
+    private _templateArchive: JsZip | null = null;
     /** 所有工作表信息列表 */
     sheets: SheetInfo[] | SheetInfoMust[] = [];
     /** 当前处理的工作表信息 */
@@ -47,6 +49,8 @@ class Workbook {
     private _imageCellRefsBySheet: Map<string, Set<string>> = new Map<string, Set<string>>();
     /** 表格展开会下推后续行，记录每个展开起点对应的新增行数 */
     private _rowExpansionsBySheet: Map<string, Map<number, number>> = new Map<string, Map<number, number>>();
+    /** 新增表格单元格没有原始坐标样式时，回退复制模板行同列样式 */
+    private _styleFallbackRefsBySheet: Map<string, Map<string, string>> = new Map<string, Map<string, string>>();
     // ==================== 构造函数 ====================
     /**
      * 创建工作簿实例
@@ -261,6 +265,8 @@ class Workbook {
      * @param data - XLSX 文件的 Buffer 或二进制字符串
      */
     async loadTemplate(data: Buffer | string): Promise<void> {
+        const templateBuffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary');
+        this._templateArchive = await JsZip.loadAsync(templateBuffer);
         if (Buffer.isBuffer(data)) {
             data = data.toString('binary');
         }
@@ -603,6 +609,7 @@ class Workbook {
                 Column: cell.Column,
                 Value: textValue,
             });
+            this.recordStyleFallbackRef(cell, baseRow + index, baseRow);
         }
         return result;
     }
@@ -705,12 +712,21 @@ class Workbook {
     private async patchGeneratedWorkbook(buffer: Buffer): Promise<JsZip> {
         const zip = await JsZip.loadAsync(buffer);
         const worksheetPaths = await this.getWorksheetPaths(zip);
+        const templateWorksheetPaths = this._templateArchive
+            ? await this.getWorksheetPaths(this._templateArchive)
+            : new Map<string, string>();
 
         for (const [sheetName, worksheetPath] of worksheetPaths) {
             const file = zip.file(worksheetPath);
             if (!file) continue;
 
             let xml = await file.async('string');
+            const templateWorksheetPath = templateWorksheetPaths.get(sheetName);
+            const templateFile = templateWorksheetPath ? this._templateArchive?.file(templateWorksheetPath) : null;
+            if (templateFile) {
+                const templateXml = await templateFile.async('string');
+                xml = this.restoreCellStyleRefs(xml, templateXml, sheetName);
+            }
             xml = this.removeMergedPhantomCells(xml);
 
             const imageRefs = this._imageCellRefsBySheet.get(sheetName);
@@ -722,7 +738,22 @@ class Workbook {
             zip.file(worksheetPath, xml);
         }
 
+        await this.restoreTemplateStyleParts(zip);
         return zip;
+    }
+
+    private async restoreTemplateStyleParts(zip: JsZip): Promise<void> {
+        if (!this._templateArchive) return;
+
+        const stylePartPaths = [
+            'xl/styles.xml',
+            'xl/theme/theme1.xml',
+        ];
+        for (const partPath of stylePartPaths) {
+            const file = this._templateArchive.file(partPath);
+            if (!file) continue;
+            zip.file(partPath, await file.async('string'));
+        }
     }
 
     private recordImageCellRef(cell: CellPlaceholder): void {
@@ -742,6 +773,15 @@ class Workbook {
         const expansions = this._rowExpansionsBySheet.get(sheetName) ?? new Map<number, number>();
         expansions.set(baseRow, Math.max(expansions.get(baseRow) ?? 0, delta));
         this._rowExpansionsBySheet.set(sheetName, expansions);
+    }
+
+    private recordStyleFallbackRef(cell: CellPlaceholder, targetRow: number, sourceRow: number): void {
+        const sheetName = String(cell.Sheet ?? '');
+        const targetRef = `${this.colNumberToLetter(cell.Column)}${targetRow}`;
+        const sourceRef = `${this.colNumberToLetter(cell.Column)}${sourceRow}`;
+        const refs = this._styleFallbackRefsBySheet.get(sheetName) ?? new Map<string, string>();
+        refs.set(targetRef, sourceRef);
+        this._styleFallbackRefsBySheet.set(sheetName, refs);
     }
 
     private expandImageCellRefs(sheetName: string, refs: Set<string>): Set<string> {
@@ -803,6 +843,194 @@ class Workbook {
         return attrs;
     }
 
+    private extractCellStyleRefs(xml: string): Map<string, string> {
+        const refs = new Map<string, string>();
+        xml.replace(/<c\b([^>]*)>/g, (_match, rawAttrs: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            if (attrs.r && attrs.s !== undefined) {
+                refs.set(attrs.r, attrs.s);
+            }
+            return _match;
+        });
+        return refs;
+    }
+
+    private extractCellRefs(xml: string): Set<string> {
+        const refs = new Set<string>();
+        xml.replace(/<c\b([^>]*)>/g, (_match, rawAttrs: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            if (attrs.r) {
+                refs.add(attrs.r);
+            }
+            return _match;
+        });
+        return refs;
+    }
+
+    private extractStyleOnlyCells(xml: string): Map<string, string> {
+        const cells = new Map<string, string>();
+        xml.replace(/<c\b([^>]*)\/>/g, (match, rawAttrs: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            if (attrs.r && attrs.s !== undefined) {
+                cells.set(attrs.r, match);
+            }
+            return match;
+        });
+        return cells;
+    }
+
+    private extractRowNumbers(xml: string): Set<number> {
+        const rows = new Set<number>();
+        xml.replace(/<row\b([^>]*)\/?>/g, (_match, rawAttrs: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            const rowNumber = parseInt(attrs.r, 10);
+            if (!isNaN(rowNumber)) {
+                rows.add(rowNumber);
+            }
+            return _match;
+        });
+        return rows;
+    }
+
+    private extractRowAttrs(xml: string): Map<number, string> {
+        const rows = new Map<number, string>();
+        xml.replace(/<row\b([^>]*)\/?>/g, (_match, rawAttrs: string) => {
+            const attrsText = rawAttrs.endsWith('/') ? rawAttrs.slice(0, -1) : rawAttrs;
+            const attrs = this.extractXmlAttributes(attrsText);
+            const rowNumber = parseInt(attrs.r, 10);
+            if (!isNaN(rowNumber)) {
+                rows.set(rowNumber, attrsText);
+            }
+            return _match;
+        });
+        return rows;
+    }
+
+    private restoreCellStyleRefs(xml: string, templateXml: string, sheetName: string): string {
+        const templateStyles = this.extractCellStyleRefs(templateXml);
+        const fallbackRefs = this._styleFallbackRefsBySheet.get(sheetName);
+
+        xml = xml.replace(/<c\b([^>]*)>/g, (match, rawAttrs: string) => {
+            const selfClosing = rawAttrs.endsWith('/');
+            let attrsText = selfClosing ? rawAttrs.slice(0, -1) : rawAttrs;
+            const attrs = this.extractXmlAttributes(attrsText);
+            const ref = attrs.r;
+            if (!ref) return match;
+
+            const fallbackRef = fallbackRefs?.get(ref);
+            const styleId = templateStyles.get(ref) ?? (fallbackRef ? templateStyles.get(fallbackRef) : undefined);
+            attrsText = styleId === undefined
+                ? attrsText.replace(/\s+s="[^"]*"/, '')
+                : (/\s+s="[^"]*"/.test(attrsText)
+                    ? attrsText.replace(/\s+s="[^"]*"/, ` s="${styleId}"`)
+                    : `${attrsText} s="${styleId}"`);
+            return `<c${attrsText}${selfClosing ? '/' : ''}>`;
+        });
+        return this.restoreMissingStyleOnlyCells(xml, templateXml);
+    }
+
+    private restoreMissingStyleOnlyCells(xml: string, templateXml: string): string {
+        const existingRefs = this.extractCellRefs(xml);
+        const missingCellsByRow = new Map<number, Array<{ colNumber: number; cellXml: string }>>();
+
+        for (const [ref, cellXml] of this.extractStyleOnlyCells(templateXml)) {
+            if (existingRefs.has(ref)) continue;
+
+            const parsed = this.parseCellAddress(ref);
+            if (!parsed) continue;
+
+            const cells = missingCellsByRow.get(parsed.rowNum) ?? [];
+            cells.push({ colNumber: parsed.colNumber, cellXml });
+            missingCellsByRow.set(parsed.rowNum, cells);
+        }
+
+        if (missingCellsByRow.size === 0) return xml;
+
+        const templateRowAttrs = this.extractRowAttrs(templateXml);
+
+        xml = xml.replace(/<row\b([^>]*)>([\s\S]*?)<\/row>/g, (match, rawAttrs: string, rowContent: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            const rowNumber = parseInt(attrs.r, 10);
+            const missingCells = missingCellsByRow.get(rowNumber);
+            if (!missingCells || missingCells.length === 0) return match;
+
+            let nextRowContent = rowContent;
+            for (const cell of missingCells.sort((a, b) => b.colNumber - a.colNumber)) {
+                nextRowContent = this.insertCellXmlByColumn(nextRowContent, cell.cellXml, cell.colNumber);
+            }
+            return `<row${rawAttrs}>${nextRowContent}</row>`;
+        });
+
+        xml = xml.replace(/<row\b([^>]*)\/>/g, (match, rawAttrs: string) => {
+            const attrs = this.extractXmlAttributes(rawAttrs);
+            const rowNumber = parseInt(attrs.r, 10);
+            const missingCells = missingCellsByRow.get(rowNumber);
+            if (!missingCells || missingCells.length === 0) return match;
+
+            const rowContent = missingCells
+                .sort((a, b) => a.colNumber - b.colNumber)
+                .map(cell => cell.cellXml)
+                .join('');
+            return `<row${rawAttrs}>${rowContent}</row>`;
+        });
+
+        const existingRows = this.extractRowNumbers(xml);
+        const missingRows = Array.from(missingCellsByRow.entries())
+            .filter(([rowNumber]) => !existingRows.has(rowNumber))
+            .sort(([a], [b]) => a - b)
+            .map(([rowNumber, cells]) => {
+                const rowContent = cells
+                    .sort((a, b) => a.colNumber - b.colNumber)
+                    .map(cell => cell.cellXml)
+                    .join('');
+                return {
+                    rowNumber,
+                    rowXml: `<row${templateRowAttrs.get(rowNumber) ?? ` r="${rowNumber}"`}>${rowContent}</row>`,
+                };
+            });
+
+        for (const row of missingRows.sort((a, b) => b.rowNumber - a.rowNumber)) {
+            xml = this.insertRowXmlByNumber(xml, row.rowXml, row.rowNumber);
+        }
+
+        return xml;
+    }
+
+    private insertCellXmlByColumn(rowContent: string, cellXml: string, colNumber: number): string {
+        const cellMatches = Array.from(rowContent.matchAll(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g));
+        for (const match of cellMatches) {
+            const attrs = this.extractXmlAttributes(match[0]);
+            const ref = attrs.r;
+            if (!ref) continue;
+
+            const parsed = this.parseCellAddress(ref);
+            if (parsed && parsed.colNumber > colNumber && match.index !== undefined) {
+                return `${rowContent.slice(0, match.index)}${cellXml}${rowContent.slice(match.index)}`;
+            }
+        }
+        return `${rowContent}${cellXml}`;
+    }
+
+    private insertRowXmlByNumber(xml: string, rowXml: string, rowNumber: number): string {
+        const sheetDataMatch = xml.match(/<sheetData>([\s\S]*?)<\/sheetData>/);
+        if (!sheetDataMatch || sheetDataMatch.index === undefined) return xml;
+
+        const sheetDataStart = sheetDataMatch.index + '<sheetData>'.length;
+        const sheetDataContent = sheetDataMatch[1];
+        const rowMatches = Array.from(sheetDataContent.matchAll(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g));
+        for (const match of rowMatches) {
+            const attrs = this.extractXmlAttributes(match[0]);
+            const currentRowNumber = parseInt(attrs.r, 10);
+            if (!isNaN(currentRowNumber) && currentRowNumber > rowNumber && match.index !== undefined) {
+                const insertIndex = sheetDataStart + match.index;
+                return `${xml.slice(0, insertIndex)}${rowXml}${xml.slice(insertIndex)}`;
+            }
+        }
+
+        const insertIndex = sheetDataMatch.index + sheetDataMatch[0].length - '</sheetData>'.length;
+        return `${xml.slice(0, insertIndex)}${rowXml}${xml.slice(insertIndex)}`;
+    }
+
     private normalizeWorkbookTarget(target: string): string {
         const normalized = target.replace(/\\/g, '/').replace(/^\/+/, '');
         return normalized.startsWith('xl/') ? normalized : `xl/${normalized}`;
@@ -830,7 +1058,10 @@ class Workbook {
         }
 
         for (const ref of refs) {
-            xml = xml.replace(new RegExp(`<c\\s+[^>]*\\br="${ref}"(?=\\s|/|>)[^>]*/>`, 'g'), '');
+            xml = xml.replace(new RegExp(`<c\\s+([^>]*\\br="${ref}"(?=\\s|/|>)[^>]*)/>`, 'g'), (match, rawAttrs: string) => {
+                const attrs = this.extractXmlAttributes(rawAttrs);
+                return attrs.s === undefined ? '' : match;
+            });
         }
 
         return xml;

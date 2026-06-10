@@ -137,6 +137,7 @@ describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
         // 创建内联模板：多列表格数据
         // 判断 test_data 文件夹是否存在，不存在则创建
         let wb: exceljs.Workbook;
+        let xlsx: Buffer;
         await fs.mkdir('./test_data', { recursive: true });
         //判断 test_data/default_template_SD.xlsx 是否存在，存在则加载 exceljs.Workbook 对象
         const templatePath = './test_data/default_template_SD.xlsx';
@@ -144,6 +145,7 @@ describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
         const newFile = `./test_data/default_template_${new Date().valueOf()}_SD.xlsx`;
         if (await fileExists(templatePath)) {
             const templateBuffer = await fs.readFile(templatePath);
+            xlsx = Buffer.from(templateBuffer);
             wb = await loadWorkbook(templateBuffer);
         } else {
             // 不存在则创建一个新的模板文件
@@ -161,9 +163,9 @@ describe('generateXlsxTemplate', { tags: ["backend"] }, () => {
             ws.getCell('E13').value = '${table:items.title}';
             ws.getCell('G13').value = '${table:items.num}';
 
+            xlsx = Buffer.from(await wb.xlsx.writeBuffer());
         }
 
-        const xlsx = Buffer.from(await wb.xlsx.writeBuffer());
         let values: Record<string, any> = {};
         if (await fileExists(templateDataPath)) {
             const templateData = await fs.readFile(templateDataPath, 'utf-8');

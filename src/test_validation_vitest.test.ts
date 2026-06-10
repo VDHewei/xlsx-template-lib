@@ -16,8 +16,16 @@ function hasTestFiles(): boolean {
     }
 }
 
+function getCellXml(sheetXml: string, ref: string): string | undefined {
+    return sheetXml.match(new RegExp(`<c[^>]*\\br="${ref}"(?=\\s|/|>)[\\s\\S]*?(?:</c>|/>)`))?.[0];
+}
+
+function getCellStyle(sheetXml: string, ref: string): string | undefined {
+    return getCellXml(sheetXml, ref)?.match(/\bs="([^"]*)"/)?.[1];
+}
+
 describe('Bug Fix Validation', () => {
-    it('should preserve A11:C15 merged cell without phantom A14/A15 cells', async () => {
+    it('should preserve A11:C15 merged cell border styles', async () => {
         if (!hasTestFiles()) {
             console.log('[SKIP] test_data/default_template_SD.xlsx not found — skipping XML validation test');
             return;
@@ -32,15 +40,17 @@ describe('Bug Fix Validation', () => {
         const zip = await JsZip.loadAsync(outBuf);
         const sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
 
-        // Check that A14 and A15 do NOT exist as standalone cell elements
-        expect(sheetXml).not.toMatch(/<c r="A14"[ >]/);
-        expect(sheetXml).not.toMatch(/<c r="A15"[ >]/);
+        const templateZip = await JsZip.loadAsync(tmplBuf);
+        const templateSheetXml = await templateZip.file('xl/worksheets/sheet1.xml').async('string');
 
-        // Verify merge range A11:C15 still exists
         expect(sheetXml).toContain('A11:C15');
+        for (const ref of ['A14', 'B14', 'C14', 'A15', 'B15', 'C15']) {
+            expect(getCellXml(sheetXml, ref), ref).toBeTruthy();
+            expect(getCellStyle(sheetXml, ref)).toEqual(getCellStyle(templateSheetXml, ref));
+        }
     });
 
-    it('should preserve M14-Q17 border-only cells (shifted to M18-Q22)', async () => {
+    it('should preserve M14-Q17 border-only cell styles', async () => {
         if (!hasTestFiles()) {
             console.log('[SKIP] test_data/default_template_SD.xlsx not found — skipping XML validation test');
             return;
@@ -52,18 +62,27 @@ describe('Bug Fix Validation', () => {
         await xlsx.render(renderData, 'Summary');
         const outBuf = await xlsx.generate({ type: 'nodebuffer' });
 
+        const templateZip = await JsZip.loadAsync(tmplBuf);
         const zip = await JsZip.loadAsync(outBuf);
+        const templateSheetXml = await templateZip.file('xl/worksheets/sheet1.xml').async('string');
         const sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
+        const templateStylesXml = await templateZip.file('xl/styles.xml').async('string');
+        const stylesXml = await zip.file('xl/styles.xml').async('string');
 
-        // Original rows 14-17 are pushed down by 4 rows (5 formStatusHistories items expand table by 4 rows)
-        // So cells at M14-Q17 should now be at M18-Q22
+        expect(stylesXml).toEqual(templateStylesXml);
+
         const cols = ['M', 'N', 'O', 'P', 'Q'];
-        for (let r = 18; r <= 21; r++) {
+        for (let r = 14; r <= 17; r++) {
             for (const col of cols) {
                 const ref = col + r;
-                const cellRegex = new RegExp(`<c r="${ref}"`);
-                expect(sheetXml).toMatch(cellRegex);
+                expect(getCellXml(sheetXml, ref)).toBeTruthy();
+                expect(getCellStyle(sheetXml, ref)).toEqual(getCellStyle(templateSheetXml, ref));
             }
+        }
+
+        for (const ref of ['E12', 'I12', 'M12', 'M13', 'S12', 'S13', 'H12', 'L12', 'H13', 'O13', 'P13', 'Q13', 'E14', 'G14', 'S14']) {
+            expect(getCellXml(sheetXml, ref), ref).toBeTruthy();
+            expect(getCellStyle(sheetXml, ref)).toEqual(getCellStyle(templateSheetXml, ref));
         }
     });
 
@@ -130,5 +149,9 @@ describe('Bug Fix Validation', () => {
             const si = parseInt(d5Match[1], 10);
             expect(si).toBeGreaterThanOrEqual(0);
         }
+
+        const templateZip = await JsZip.loadAsync(tmplBuf);
+        const templateSheetXml = await templateZip.file('xl/worksheets/sheet1.xml').async('string');
+        expect(getCellStyle(sheetXml, 'D5')).toEqual(getCellStyle(templateSheetXml, 'D5'));
     });
 });
